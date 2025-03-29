@@ -1,5 +1,7 @@
 # EnBot - English Learning Assistant
 
+For detailed technical specifications, please refer to [TECHNICAL_SPECIFICATION.md](TECHNICAL_SPECIFICATION.md)
+
 In this document, I describe my project idea. The project is a tool based on Telegram Bot that helps to learn English words. The main ideas are that the bot should be a Telegram bot and should use the Telegram API.
 
 The bot should be able to accept lists of words which users want to learn. The list of words will be just regular text with no translation. There's no transcription whatever. The bot should be able to take this list of words, parse it, and create a database for new words to learn.
