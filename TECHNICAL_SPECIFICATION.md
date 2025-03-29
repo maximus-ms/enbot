@@ -17,6 +17,9 @@ EnBot is a Telegram-based English learning assistant that helps users learn voca
     - Cooldown system:
       - 1-month inactivity reduces priority by 1
       - Only affects words with priority > 5
+    - Special priority for repetition words:
+      - Words due for repetition get priority level 11 (highest_priority + 1)
+      - Priority 11 words are temporary and only used for scheduling
   - Duplicate detection with priority updates
   - Separate storage for pronunciations and images
   - File-based storage for media with database references
@@ -38,8 +41,15 @@ EnBot is a Telegram-based English learning assistant that helps users learn voca
     - Multiple cycles per day allowed after completion
     - Unfinished cycles continue to next day
     - Configurable day start time (default: 3 AM)
-  - Words selected from highest priority set
-  - Fallback to lower priority sets if needed
+  - Word Selection Algorithm:
+    - Maximum 70% of words from repetition history (priority 11)
+    - Remaining 30% from current priority sets
+    - Words selected from highest priority set first
+    - Fallback to lower priority sets if needed
+    - Random selection within each word set:
+      - Random selection from words due for repetition
+      - Random selection from current priority sets
+      - Ensures even distribution of word exposure
   - Words removed from cycle after marking as learned
   - No new words added during active cycle
   - End-of-cycle review:

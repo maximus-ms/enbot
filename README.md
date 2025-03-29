@@ -6,11 +6,11 @@ In this document, I describe my project idea. The project is a tool based on Tel
 
 The bot should be able to accept lists of words which users want to learn. The list of words will be just regular text with no translation. There's no transcription whatever. The bot should be able to take this list of words, parse it, and create a database for new words to learn.
 
-Every word... not actually the bot... excuse me. Take every word... and not like this. The list of words to learn should be semicolon-separated, so it can be not a single word but a phrase. The bot takes this list, parses it, and puts them into the database for every single item (word or phrase).
+The list of words to learn should be semicolon-separated, so it can be not a single word but a phrase. The bot takes this list, parses it, and puts them into the database for every single item (word or phrase).
 
-Both should increase or add more data, more information about this word or phrase to learn. What should be added? First of all, the translation to Ukrainian should be added. Actually, the capability should be that users can select two languages: which to learn and what is their native language. So there should be an option for configuration. For example, users can select English as the target language and Ukrainian as their native language.
+Bot should add more data, more information about this word or phrase to learn. What should be added? First of all, the translation to Ukrainian should be added. Actually, the capability should be that users can select two languages: which to learn and what is their native language. So there should be an option for configuration. For example, users can select English as the target language and Ukrainian as their native language.
 
-So when the bot receives the list of words, it parses it and adds additional information to each item. What should be the additional information? Additional information should include:
+So when the bot receives the list of words, it parses it and adds additional information to each item. Additional information should include:
 
 - Translation (this is very important and mandatory)
 - Transcription (if it is in English)
@@ -22,15 +22,15 @@ All this information about words is kept in a dictionary, and the dictionary is 
 
 Another functionality for the bot is to teach users or help users learn words. Every time when a user wants to learn new words, the bot should select with some algorithm (we will think about this algorithm later) and select some words and propose to the user to learn them.
 
-How can we learn with the bot? First of all, first option: so it is both right... the English word for example, and proposes two, three, or four options of translation, and the user should select that just to press a button and select this. So at the correct one, and the bot checks if it is correct or not and responds accordingly.
+How can we learn with the bot? First of all, first option: bot shows the English word for example, and proposes two, three, or four options of translation, and the user should select (just to press a button) and select this. So at the correct one, and the bot checks if it is correct or not and responds accordingly.
 
 Every time when the bot proposes the word, there should be a button to pronounce this word, to show use cases, maybe pictures (now I don't know about the picture).
 
-The second option how the bot could propose user to learn the word is to defend the translation in Ukrainian or in the native language and propose a few options (maybe 4 options) to guess what the word is in English. And those words should be... I mean, options should be like they should be really similar to the target word.
+The second option how the bot could propose user to learn the word is to defend the translation in Ukrainian or in the native language and propose a few options (maybe 4 options) to guess what the word is in English. And those words should be really similar to the target word.
 
-The third option to launch is: the bot proposes the native translation of this word, and the user should type the correct variant of this word. Every time when the user responds, the bot should answer if this is correct or if it is wrong, and maybe correct if it is just a small typo, and propose to the user again to ask if this word was remembered or the user just guessed it.
+The third option to learn is: the bot proposes the native translation of this word, and the user should type the correct variant of this word in target language. Every time when the user responds, the bot should answer if this is correct or if it is wrong, and maybe correct if it is just a small typo, and propose to the user again to ask if this word was remembered or the user just guessed it.
 
-The next logic is about the algorithm how to learn words. Based on the answer from the user, if the word is learned, the system or the bot should accept if it is. If this word is learned or not, and apply some special algorithm. Of course, repetition of this word. The logic of this algorithm is to repeat the word in different time frames. For example:
+The next logic is about the algorithm how to learn words. Based on the answer from the user, if the word is learned, the bot should accept it. If this word is learned or not, and apply some special algorithm. Of course, repetition of this word. The logic of this algorithm is to repeat the word in different time frames. For example:
 
 1. First, the user learns the word, so this word is marked as learned at stage 1
 2. The next time this word will appear in the study after one day
@@ -41,6 +41,11 @@ The next logic is about the algorithm how to learn words. Based on the answer fr
 7. And one month
 
 Those periods, the number of those periods, and the period itself should be configurable.
+
+Words that need to be repeated (based on the spaced repetition schedule) have special priority handling:
+- Words due for repetition get priority level 11 (highest_priority + 1)
+- Maximum 70% of words in a learning cycle can be from the repetition history
+- Remaining 30% of words are selected from the user's current priority sets
 
 The Telegram Bot should be able to send kind of invitation message to the user to invite the user to start training/learning. For example, users can configure that they want to start learning every day at 11:00 PM. So users can configure this, and sometimes every day around this timeframe, the bot will send a message to the user that they should learn words.
 
