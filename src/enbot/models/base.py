@@ -1,28 +1,41 @@
 """Base model configuration."""
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Generator
 
-from sqlalchemy import DateTime, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import Column, DateTime, create_engine, func, event
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
+from sqlalchemy.engine import Engine
 
 from enbot.config import settings
 
 # Create SQLAlchemy engine
-engine = create_engine(settings.DATABASE_URL)
+engine = create_engine(settings.database.url)
+
+# Configure SQLite to handle timezone-aware datetimes
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    """Set SQLite pragma for timezone-aware datetimes."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA timezone=UTC")
+    cursor.close()
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Create declarative base
+# Create declarative base class
 Base = declarative_base()
 
 
 class TimestampMixin:
-    """Mixin to add created_at and updated_at timestamps."""
-    created_at = DateTime(default=datetime.utcnow)
-    updated_at = DateTime(default=datetime.utcnow, onupdate=datetime.utcnow)
+    """Mixin to add timestamp columns to models."""
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(UTC))
+    updated_at = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
 
 
-def get_db() -> Any:
+def get_db() -> Generator[Session, None, None]:
     """Get database session."""
     db = SessionLocal()
     try:
@@ -33,4 +46,5 @@ def get_db() -> Any:
 
 def init_db() -> None:
     """Initialize database."""
-    Base.metadata.create_all(bind=engine) 
+    Base.metadata.drop_all(bind=engine)  # Drop all tables first
+    Base.metadata.create_all(bind=engine)  # Create tables with new schema 

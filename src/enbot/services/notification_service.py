@@ -1,5 +1,5 @@
 """Service for managing user notifications."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import List, Optional
 
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ class NotificationService:
 
     def get_users_for_notification(self) -> List[User]:
         """Get users who should receive notifications."""
-        current_hour = datetime.utcnow().hour
+        current_hour = datetime.now(UTC).hour
         
         return (
             self.db.query(User)
@@ -143,7 +143,7 @@ class NotificationService:
                 and_(
                     LearningCycle.user_id == user.id,
                     LearningCycle.is_completed == True,
-                    LearningCycle.end_time >= datetime.utcnow() - timedelta(days=7),
+                    LearningCycle.end_time >= datetime.now(UTC) - timedelta(days=7),
                 )
             )
             .all()
@@ -196,12 +196,12 @@ class NotificationService:
         last_notification = user.last_notification_time
         if last_notification:
             # Don't send more than one reminder per day
-            if last_notification.date() == datetime.utcnow().date():
+            if last_notification.date() == datetime.now(UTC).date():
                 return False
         
         return True
 
     def update_last_notification_time(self, user: User) -> None:
         """Update the user's last notification time."""
-        user.last_notification_time = datetime.utcnow()
+        user.last_notification_time = datetime.now(UTC)
         self.db.commit() 

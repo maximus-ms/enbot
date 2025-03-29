@@ -1,12 +1,13 @@
 """Tests for Telegram bot handlers."""
 from datetime import datetime, timedelta
 from typing import Generator
+from unittest.mock import Mock, AsyncMock
 
 import pytest
 from faker import Faker
 from sqlalchemy.orm import Session
 from telegram import Update, User as TelegramUser
-from telegram.ext import CallbackContext
+from telegram.ext import CallbackContext, Application
 
 from enbot.models.base import SessionLocal, init_db
 from enbot.models.models import (
@@ -49,38 +50,43 @@ def db() -> Generator[Session, None, None]:
 
 
 @pytest.fixture
-def telegram_user() -> TelegramUser:
+def telegram_user() -> Mock:
     """Create a mock Telegram user."""
-    return TelegramUser(
-        id=fake.random_int(),
-        first_name=fake.first_name(),
-        last_name=fake.last_name(),
-        username=fake.user_name(),
-        is_bot=False,
-        language_code="en",
-        is_premium=False,
-        added_to_attachment_menu=False,
-    )
+    user = Mock(spec=TelegramUser)
+    user.id = fake.random_int()
+    user.first_name = fake.first_name()
+    user.last_name = fake.last_name()
+    user.username = fake.user_name()
+    user.is_bot = False
+    user.language_code = "en"
+    user.is_premium = False
+    user.added_to_attachment_menu = False
+    return user
 
 
 @pytest.fixture
-def update(telegram_user: TelegramUser) -> Update:
+def update(telegram_user: Mock) -> Mock:
     """Create a mock Update object."""
-    update = Update(update_id=fake.random_int())
+    update = Mock(spec=Update)
+    update.update_id = fake.random_int()
     update.effective_user = telegram_user
+    update.message = None
+    update.callback_query = None
     return update
 
 
 @pytest.fixture
-def context() -> CallbackContext:
+def context() -> Mock:
     """Create a mock CallbackContext object."""
-    return CallbackContext(Application.builder().token("test_token").build())
+    context = Mock(spec=CallbackContext)
+    context.application = Mock(spec=Application)
+    return context
 
 
 def test_start(update: Update, context: CallbackContext, db: Session) -> None:
     """Test start command handler."""
     # Add message to update
-    update.message = type("Message", (), {"reply_text": pytest.AsyncMock()})()
+    update.message = type("Message", (), {"reply_text": AsyncMock()})()
     
     # Run handler
     result = pytest.mark.asyncio(start(update, context))
@@ -102,9 +108,9 @@ def test_handle_callback(update: Update, context: CallbackContext) -> None:
     """Test callback query handler."""
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
+        "answer": AsyncMock(),
         "data": "start_learning",
-        "edit_message_text": pytest.AsyncMock(),
+        "edit_message_text": AsyncMock(),
     })()
     
     # Run handler
@@ -126,6 +132,8 @@ def test_start_learning(update: Update, context: CallbackContext, db: Session) -
     user = User(
         telegram_id=update.effective_user.id,
         username=update.effective_user.username,
+        native_language="en",
+        target_language="es",
     )
     db.add(user)
     db.commit()
@@ -144,8 +152,8 @@ def test_start_learning(update: Update, context: CallbackContext, db: Session) -
     
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
-        "edit_message_text": pytest.AsyncMock(),
+        "answer": AsyncMock(),
+        "edit_message_text": AsyncMock(),
     })()
     
     # Run handler
@@ -163,8 +171,8 @@ def test_add_words(update: Update, context: CallbackContext) -> None:
     """Test add words handler."""
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
-        "edit_message_text": pytest.AsyncMock(),
+        "answer": AsyncMock(),
+        "edit_message_text": AsyncMock(),
     })()
     
     # Run handler
@@ -184,6 +192,8 @@ def test_handle_add_words(update: Update, context: CallbackContext, db: Session)
     user = User(
         telegram_id=update.effective_user.id,
         username=update.effective_user.username,
+        native_language="en",
+        target_language="es",
     )
     db.add(user)
     db.commit()
@@ -191,7 +201,7 @@ def test_handle_add_words(update: Update, context: CallbackContext, db: Session)
     # Add message to update
     update.message = type("Message", (), {
         "text": "hello\nworld\npython",
-        "reply_text": pytest.AsyncMock(),
+        "reply_text": AsyncMock(),
     })()
     
     # Run handler
@@ -215,6 +225,8 @@ def test_show_statistics(update: Update, context: CallbackContext, db: Session) 
     user = User(
         telegram_id=update.effective_user.id,
         username=update.effective_user.username,
+        native_language="en",
+        target_language="es",
     )
     db.add(user)
     db.commit()
@@ -234,8 +246,8 @@ def test_show_statistics(update: Update, context: CallbackContext, db: Session) 
     
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
-        "edit_message_text": pytest.AsyncMock(),
+        "answer": AsyncMock(),
+        "edit_message_text": AsyncMock(),
     })()
     
     # Run handler
@@ -253,8 +265,8 @@ def test_show_settings(update: Update, context: CallbackContext) -> None:
     """Test show settings handler."""
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
-        "edit_message_text": pytest.AsyncMock(),
+        "answer": AsyncMock(),
+        "edit_message_text": AsyncMock(),
     })()
     
     # Run handler
@@ -274,14 +286,16 @@ def test_handle_language_selection(update: Update, context: CallbackContext, db:
     user = User(
         telegram_id=update.effective_user.id,
         username=update.effective_user.username,
+        native_language="en",
+        target_language="es",
     )
     db.add(user)
     db.commit()
     
     # Add callback query to update
     update.callback_query = type("CallbackQuery", (), {
-        "answer": pytest.AsyncMock(),
-        "edit_message_text": pytest.AsyncMock(),
+        "answer": AsyncMock(),
+        "edit_message_text": AsyncMock(),
         "data": "language_en",
     })()
     

@@ -1,10 +1,11 @@
 """Tests for notification service."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Generator
 
 import pytest
 from faker import Faker
 from sqlalchemy.orm import Session
+from unittest.mock import patch
 
 from enbot.models.base import SessionLocal, init_db
 from enbot.models.models import User, Word, UserWord, LearningCycle
@@ -40,6 +41,8 @@ def test_user(db: Session) -> User:
         day_start_hour=9,
         daily_goal_words=10,
         daily_goal_minutes=15,
+        native_language="en",
+        target_language="uk",
     )
     db.add(user)
     db.commit()
@@ -48,27 +51,35 @@ def test_user(db: Session) -> User:
 
 def test_get_users_for_notification(notification_service: NotificationService, test_user: User) -> None:
     """Test getting users for notification."""
-    # Set current hour to match user's day_start_hour
-    current_hour = 9
+    # Mock current time to match user's day_start_hour
+    mock_time = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)  # 9:00 AM UTC
     
-    # Get users
-    users = notification_service.get_users_for_notification()
-    assert len(users) == 1
-    assert users[0].id == test_user.id
-    
-    # Disable notifications
-    test_user.notifications_enabled = False
-    notification_service.db.commit()
-    
-    # Get users again
-    users = notification_service.get_users_for_notification()
-    assert len(users) == 0
+    with patch("enbot.services.notification_service.datetime") as mock_datetime:
+        mock_datetime.now.return_value = mock_time
+        mock_datetime.UTC = UTC
+        
+        # Get users
+        users = notification_service.get_users_for_notification()
+        assert len(users) == 1
+        assert users[0].id == test_user.id
+        
+        # Disable notifications
+        test_user.notifications_enabled = False
+        notification_service.db.commit()
+        
+        # Get users again
+        users = notification_service.get_users_for_notification()
+        assert len(users) == 0
 
 
 def test_get_daily_reminder_message(notification_service: NotificationService, test_user: User) -> None:
     """Test generating daily reminder message."""
     # Create some words
-    word = Word(text="test")
+    word = Word(
+        text="test",
+        translation="тест",
+        language_pair=f"{test_user.native_language}-{test_user.target_language}",
+    )
     notification_service.db.add(word)
     notification_service.db.commit()
     
@@ -83,7 +94,7 @@ def test_get_daily_reminder_message(notification_service: NotificationService, t
     # Create active cycle
     cycle = LearningCycle(
         user_id=test_user.id,
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
         is_completed=False,
         words_learned=5,
         time_spent=7.5,
@@ -106,14 +117,19 @@ def test_get_daily_reminder_message(notification_service: NotificationService, t
 def test_get_review_reminder_message(notification_service: NotificationService, test_user: User) -> None:
     """Test generating review reminder message."""
     # Create words for review
-    word = Word(text="test")
+    word = Word(
+        text="test",
+        translation="тест",
+        language_pair=f"{test_user.native_language}-{test_user.target_language}",
+    )
     notification_service.db.add(word)
     notification_service.db.commit()
     
     user_word = UserWord(
         user_id=test_user.id,
         word_id=word.id,
-        next_review=datetime.utcnow() - timedelta(days=1),
+        is_learned=True,
+        next_review=datetime.now(UTC) - timedelta(days=1),
     )
     notification_service.db.add(user_word)
     notification_service.db.commit()
@@ -131,7 +147,11 @@ def test_get_achievement_message(notification_service: NotificationService, test
     """Test generating achievement message."""
     # Create learned words
     for i in range(10):
-        word = Word(text=f"word{i}")
+        word = Word(
+            text=f"word{i}",
+            translation=f"слово{i}",
+            language_pair=f"{test_user.native_language}-{test_user.target_language}",
+        )
         notification_service.db.add(word)
         notification_service.db.commit()
         
@@ -157,8 +177,8 @@ def test_get_streak_message(notification_service: NotificationService, test_user
     for i in range(7):
         cycle = LearningCycle(
             user_id=test_user.id,
-            start_time=datetime.utcnow() - timedelta(days=i),
-            end_time=datetime.utcnow() - timedelta(days=i),
+            start_time=datetime.now(UTC) - timedelta(days=i),
+            end_time=datetime.now(UTC) - timedelta(days=i),
             is_completed=True,
             words_learned=5,
             time_spent=10.0,
@@ -176,18 +196,23 @@ def test_get_streak_message(notification_service: NotificationService, test_user
 
 def test_should_send_review_reminder(notification_service: NotificationService, test_user: User) -> None:
     """Test checking if review reminder should be sent."""
-    # Initially should send reminder
-    assert notification_service.should_send_review_reminder(test_user) is True
+    # Initially should not send reminder (no words to review)
+    assert notification_service.should_send_review_reminder(test_user) is False
     
     # Create words for review
-    word = Word(text="test")
+    word = Word(
+        text="test",
+        translation="тест",
+        language_pair=f"{test_user.native_language}-{test_user.target_language}",
+    )
     notification_service.db.add(word)
     notification_service.db.commit()
     
     user_word = UserWord(
         user_id=test_user.id,
         word_id=word.id,
-        next_review=datetime.utcnow() - timedelta(days=1),
+        is_learned=True,
+        next_review=datetime.now(UTC) - timedelta(days=1),
     )
     notification_service.db.add(user_word)
     notification_service.db.commit()
@@ -198,7 +223,7 @@ def test_should_send_review_reminder(notification_service: NotificationService, 
     # Create active cycle
     cycle = LearningCycle(
         user_id=test_user.id,
-        start_time=datetime.utcnow(),
+        start_time=datetime.now(UTC),
         is_completed=False,
     )
     notification_service.db.add(cycle)
@@ -216,12 +241,18 @@ def test_should_send_review_reminder(notification_service: NotificationService, 
 
 def test_update_last_notification_time(notification_service: NotificationService, test_user: User) -> None:
     """Test updating last notification time."""
-    # Update time
-    notification_service.update_last_notification_time(test_user)
+    mock_time = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)
     
-    # Check time was updated
-    assert test_user.last_notification_time is not None
-    assert (datetime.utcnow() - test_user.last_notification_time).total_seconds() < 1
+    with patch("enbot.services.notification_service.datetime") as mock_datetime:
+        mock_datetime.now.return_value = mock_time
+        mock_datetime.UTC = UTC
+        
+        # Update time
+        notification_service.update_last_notification_time(test_user)
+        
+        # Check time was updated
+        assert test_user.last_notification_time is not None
+        assert test_user.last_notification_time.replace(tzinfo=UTC) == mock_time
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 """Learning service for managing learning cycles and word selection."""
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import List, Optional, Tuple
 
 from sqlalchemy import and_, or_
@@ -41,7 +41,7 @@ class LearningService:
         """Create a new learning cycle for the user."""
         cycle = LearningCycle(
             user_id=user_id,
-            start_time=datetime.utcnow(),
+            start_time=datetime.now(UTC),
             is_completed=False,
             words_learned=0,
             time_spent=0.0,
@@ -63,7 +63,7 @@ class LearningService:
             .filter(
                 and_(
                     UserWord.user_id == user_id,
-                    UserWord.next_review <= datetime.utcnow(),
+                    UserWord.next_review <= datetime.now(UTC),
                 )
             )
             .all()
@@ -83,15 +83,15 @@ class LearningService:
         )
 
         # Calculate how many words to take from each set
-        max_repetition_words = int(cycle_size * settings.REPETITION_HISTORY_PERCENTAGE)
+        max_repetition_words = int(cycle_size * settings.learning.repetition_history_percentage)
         repetition_count = min(len(repetition_words), max_repetition_words)
-        priority_count = cycle_size - repetition_count
+        priority_count = min(len(priority_words), cycle_size - repetition_count)
 
         # Randomly select words from each set
         selected_words = []
-        if repetition_words:
+        if repetition_words and repetition_count > 0:
             selected_words.extend(random.sample(repetition_words, repetition_count))
-        if priority_words:
+        if priority_words and priority_count > 0:
             selected_words.extend(random.sample(priority_words, priority_count))
 
         return selected_words
@@ -130,17 +130,20 @@ class LearningService:
         if not cycle_word:
             raise ValueError(f"Word {user_word_id} not found in cycle {cycle_id}")
 
+        # Update cycle word status
+        was_learned = cycle_word.is_learned
         cycle_word.is_learned = True
-        cycle_word.time_spent = time_spent
+        cycle_word.time_spent += time_spent  # Accumulate time spent
 
         # Update cycle statistics
         cycle = cycle_word.cycle
-        cycle.words_learned += 1
-        cycle.time_spent += time_spent
+        if not was_learned:  # Only increment words_learned if it wasn't already learned
+            cycle.words_learned += 1
+        cycle.time_spent += time_spent  # Accumulate time spent
 
         # Update user word status
         user_word = cycle_word.user_word
-        user_word.last_reviewed = datetime.utcnow()
+        user_word.last_reviewed = datetime.now(UTC)
         user_word.review_stage += 1
         user_word.next_review = self._calculate_next_review(user_word.review_stage)
 
@@ -148,10 +151,11 @@ class LearningService:
 
     def _calculate_next_review(self, review_stage: int) -> datetime:
         """Calculate the next review date based on the review stage."""
-        if review_stage >= len(settings.REPETITION_INTERVALS):
-            review_stage = len(settings.REPETITION_INTERVALS) - 1
-        days = settings.REPETITION_INTERVALS[review_stage]
-        return datetime.utcnow() + timedelta(days=days)
+        if review_stage >= len(settings.learning.repetition_intervals):
+            review_stage = len(settings.learning.repetition_intervals) - 1
+        days = settings.learning.repetition_intervals[review_stage]
+        next_review = datetime.now(UTC) + timedelta(days=days)
+        return next_review.replace(tzinfo=UTC)  # Ensure timezone awareness
 
     def complete_cycle(self, cycle_id: int) -> None:
         """Mark a learning cycle as completed."""
@@ -164,7 +168,7 @@ class LearningService:
             raise ValueError(f"Cycle {cycle_id} not found")
 
         cycle.is_completed = True
-        cycle.end_time = datetime.utcnow()
+        cycle.end_time = datetime.now(UTC)
         self.db.commit()
 
     def log_user_activity(

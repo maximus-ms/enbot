@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from enbot.services.content_generator import ContentGenerator
+from enbot.models.models import Example
 
 
 def test_generate_translation() -> None:
@@ -48,6 +49,7 @@ def test_generate_examples() -> None:
     
     assert len(examples) == 3
     for example in examples:
+        assert isinstance(example, Example)
         assert isinstance(example.sentence, str)
         assert isinstance(example.translation, str)
         assert example.is_good is True

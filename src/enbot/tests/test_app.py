@@ -11,14 +11,23 @@ from enbot.config import settings
 
 
 @pytest.fixture
-def mock_application() -> MagicMock:
+def mock_bot() -> MagicMock:
+    """Create a mock bot."""
+    bot = MagicMock(spec=Bot)
+    bot.get_me = AsyncMock()
+    return bot
+
+
+@pytest.fixture
+def mock_application(mock_bot: MagicMock) -> MagicMock:
     """Create a mock application."""
     app = MagicMock(spec=Application)
-    app.bot = MagicMock(spec=Bot)
+    app.bot = mock_bot
     app.initialize = AsyncMock()
     app.start = AsyncMock()
     app.stop = AsyncMock()
     app.shutdown = AsyncMock()
+    app.updater = MagicMock()
     app.updater.start_polling = AsyncMock()
     app.updater.stop = AsyncMock()
     app.add_handler = MagicMock()
@@ -35,11 +44,18 @@ def mock_scheduler() -> MagicMock:
 
 
 @pytest.fixture
-def bot(mock_application: MagicMock, mock_scheduler: MagicMock) -> EnBot:
+def mock_builder(mock_application: MagicMock) -> MagicMock:
+    """Create a mock application builder."""
+    builder = MagicMock()
+    builder.token.return_value.build.return_value = mock_application
+    return builder
+
+
+@pytest.fixture
+def bot(mock_builder: MagicMock, mock_scheduler: MagicMock) -> EnBot:
     """Create a bot instance with mocked dependencies."""
-    with patch("enbot.app.Application.builder") as mock_builder, \
+    with patch("enbot.app.Application.builder", return_value=mock_builder), \
          patch("enbot.app.SchedulerService", return_value=mock_scheduler):
-        mock_builder.return_value.token.return_value.build.return_value = mock_application
         return EnBot()
 
 
@@ -106,19 +122,24 @@ async def test_stop_when_not_running(bot: EnBot) -> None:
     await bot.stop()
 
     # Check nothing was called
-    bot.application.updater.stop.assert_not_called()
-    bot.application.stop.assert_not_called()
-    bot.application.shutdown.assert_not_called()
-    bot.scheduler.stop.assert_not_called()
+    if bot.application:
+        bot.application.updater.stop.assert_not_called()
+        bot.application.stop.assert_not_called()
+        bot.application.shutdown.assert_not_called()
+    if bot.scheduler:
+        bot.scheduler.stop.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_error_handling(bot: EnBot) -> None:
     """Test error handling during start and stop."""
-    # Make application.initialize raise an exception
+    await bot.start()  # Need to start first to create application
+    
+    # Make next initialize raise an exception
+    bot.application.initialize.reset_mock(side_effect=True)
     bot.application.initialize.side_effect = Exception("Test error")
 
-    # Try to start bot
+    # Try to start bot again
     with pytest.raises(Exception):
         await bot.start()
 
@@ -136,7 +157,9 @@ def test_run(bot: EnBot) -> None:
     asyncio.set_event_loop(loop)
 
     # Run bot
-    bot.run()
+    with patch.object(loop, "run_forever") as mock_run_forever:
+        mock_run_forever.side_effect = KeyboardInterrupt()
+        bot.run()
 
     # Check application was started and stopped
     bot.application.initialize.assert_called_once()

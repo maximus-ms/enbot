@@ -1,7 +1,7 @@
 """Service for managing scheduled tasks and notifications."""
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Optional, Callable, Dict, Any
 
 from sqlalchemy.orm import Session
@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 class SchedulerService:
     """Service for managing scheduled tasks and notifications."""
 
-    def __init__(self, bot: Bot):
-        """Initialize the service with a Telegram bot instance."""
+    def __init__(self, bot: Bot, db: Session):
+        """Initialize the service with a Telegram bot instance and database session."""
         self.bot = bot
+        self.db = db
         self.tasks: Dict[str, asyncio.Task] = {}
         self.running = False
+        self.notification_service = NotificationService(db)
 
     async def start(self) -> None:
         """Start the scheduler service."""
@@ -72,50 +74,41 @@ class SchedulerService:
         while self.running:
             try:
                 # Get current hour
-                current_hour = datetime.utcnow().hour
+                current_hour = datetime.now(UTC).hour
 
-                # Get database session
-                db = SessionLocal()
-                try:
-                    # Get notification service
-                    notification_service = NotificationService(db)
+                # Get users for notification
+                users = self.notification_service.get_users_for_notification()
 
-                    # Get users for notification
-                    users = notification_service.get_users_for_notification()
+                # Send notifications
+                for user in users:
+                    try:
+                        # Get message
+                        message = self.notification_service.get_daily_reminder_message(user)
 
-                    # Send notifications
-                    for user in users:
-                        try:
-                            # Get message
-                            message = notification_service.get_daily_reminder_message(user)
+                        # Send message
+                        await self.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message,
+                            parse_mode="HTML",
+                        )
 
-                            # Send message
-                            await self.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=message,
-                                parse_mode="HTML",
-                            )
+                        # Update last notification time
+                        self.notification_service.update_last_notification_time(user)
 
-                            # Update last notification time
-                            notification_service.update_last_notification_time(user)
+                        # Log success
+                        logger.info(
+                            "Sent daily notification to user %s (ID: %d)",
+                            user.username,
+                            user.telegram_id,
+                        )
 
-                            # Log success
-                            logger.info(
-                                "Sent daily notification to user %s (ID: %d)",
-                                user.username,
-                                user.telegram_id,
-                            )
-
-                        except Exception as e:
-                            logger.error(
-                                "Failed to send daily notification to user %s (ID: %d): %s",
-                                user.username,
-                                user.telegram_id,
-                                str(e),
-                            )
-
-                finally:
-                    db.close()
+                    except Exception as e:
+                        logger.error(
+                            "Failed to send daily notification to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
 
                 # Wait until next hour
                 await asyncio.sleep(3600)  # 1 hour
@@ -130,58 +123,49 @@ class SchedulerService:
         """Run review reminder task."""
         while self.running:
             try:
-                # Get database session
-                db = SessionLocal()
-                try:
-                    # Get notification service
-                    notification_service = NotificationService(db)
+                # Get all users with notifications enabled
+                users = (
+                    self.db.query(User)
+                    .filter(User.notifications_enabled == True)
+                    .all()
+                )
 
-                    # Get all users with notifications enabled
-                    users = (
-                        db.query(User)
-                        .filter(User.notifications_enabled == True)
-                        .all()
-                    )
+                # Check each user
+                for user in users:
+                    try:
+                        # Check if should send reminder
+                        if not self.notification_service.should_send_review_reminder(user):
+                            continue
 
-                    # Check each user
-                    for user in users:
-                        try:
-                            # Check if should send reminder
-                            if not notification_service.should_send_review_reminder(user):
-                                continue
+                        # Get message
+                        message = self.notification_service.get_review_reminder_message(user)
+                        if not message:
+                            continue
 
-                            # Get message
-                            message = notification_service.get_review_reminder_message(user)
-                            if not message:
-                                continue
+                        # Send message
+                        await self.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message,
+                            parse_mode="HTML",
+                        )
 
-                            # Send message
-                            await self.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=message,
-                                parse_mode="HTML",
-                            )
+                        # Update last notification time
+                        self.notification_service.update_last_notification_time(user)
 
-                            # Update last notification time
-                            notification_service.update_last_notification_time(user)
+                        # Log success
+                        logger.info(
+                            "Sent review reminder to user %s (ID: %d)",
+                            user.username,
+                            user.telegram_id,
+                        )
 
-                            # Log success
-                            logger.info(
-                                "Sent review reminder to user %s (ID: %d)",
-                                user.username,
-                                user.telegram_id,
-                            )
-
-                        except Exception as e:
-                            logger.error(
-                                "Failed to send review reminder to user %s (ID: %d): %s",
-                                user.username,
-                                user.telegram_id,
-                                str(e),
-                            )
-
-                finally:
-                    db.close()
+                    except Exception as e:
+                        logger.error(
+                            "Failed to send review reminder to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
 
                 # Wait 30 minutes before next check
                 await asyncio.sleep(1800)  # 30 minutes
@@ -196,47 +180,38 @@ class SchedulerService:
         """Run achievement check task."""
         while self.running:
             try:
-                # Get database session
-                db = SessionLocal()
-                try:
-                    # Get notification service
-                    notification_service = NotificationService(db)
+                # Get all users
+                users = self.db.query(User).all()
 
-                    # Get all users
-                    users = db.query(User).all()
+                # Check each user
+                for user in users:
+                    try:
+                        # Get achievement message
+                        message = self.notification_service.get_achievement_message(user)
+                        if not message:
+                            continue
 
-                    # Check each user
-                    for user in users:
-                        try:
-                            # Get achievement message
-                            message = notification_service.get_achievement_message(user)
-                            if not message:
-                                continue
+                        # Send message
+                        await self.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message,
+                            parse_mode="HTML",
+                        )
 
-                            # Send message
-                            await self.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=message,
-                                parse_mode="HTML",
-                            )
+                        # Log success
+                        logger.info(
+                            "Sent achievement message to user %s (ID: %d)",
+                            user.username,
+                            user.telegram_id,
+                        )
 
-                            # Log success
-                            logger.info(
-                                "Sent achievement message to user %s (ID: %d)",
-                                user.username,
-                                user.telegram_id,
-                            )
-
-                        except Exception as e:
-                            logger.error(
-                                "Failed to send achievement message to user %s (ID: %d): %s",
-                                user.username,
-                                user.telegram_id,
-                                str(e),
-                            )
-
-                finally:
-                    db.close()
+                    except Exception as e:
+                        logger.error(
+                            "Failed to send achievement message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
 
                 # Wait 1 hour before next check
                 await asyncio.sleep(3600)  # 1 hour
@@ -251,47 +226,38 @@ class SchedulerService:
         """Run streak check task."""
         while self.running:
             try:
-                # Get database session
-                db = SessionLocal()
-                try:
-                    # Get notification service
-                    notification_service = NotificationService(db)
+                # Get all users
+                users = self.db.query(User).all()
 
-                    # Get all users
-                    users = db.query(User).all()
+                # Check each user
+                for user in users:
+                    try:
+                        # Get streak message
+                        message = self.notification_service.get_streak_message(user)
+                        if not message:
+                            continue
 
-                    # Check each user
-                    for user in users:
-                        try:
-                            # Get streak message
-                            message = notification_service.get_streak_message(user)
-                            if not message:
-                                continue
+                        # Send message
+                        await self.bot.send_message(
+                            chat_id=user.telegram_id,
+                            text=message,
+                            parse_mode="HTML",
+                        )
 
-                            # Send message
-                            await self.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=message,
-                                parse_mode="HTML",
-                            )
+                        # Log success
+                        logger.info(
+                            "Sent streak message to user %s (ID: %d)",
+                            user.username,
+                            user.telegram_id,
+                        )
 
-                            # Log success
-                            logger.info(
-                                "Sent streak message to user %s (ID: %d)",
-                                user.username,
-                                user.telegram_id,
-                            )
-
-                        except Exception as e:
-                            logger.error(
-                                "Failed to send streak message to user %s (ID: %d): %s",
-                                user.username,
-                                user.telegram_id,
-                                str(e),
-                            )
-
-                finally:
-                    db.close()
+                    except Exception as e:
+                        logger.error(
+                            "Failed to send streak message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
 
                 # Wait 1 hour before next check
                 await asyncio.sleep(3600)  # 1 hour

@@ -1,9 +1,10 @@
 """Tests for user service."""
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 from typing import Generator
 
 import pytest
 from faker import Faker
+from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from enbot.models.base import SessionLocal, init_db
@@ -129,14 +130,14 @@ def test_get_user_statistics(user_service: UserService) -> None:
     for _ in range(3):
         cycle = LearningCycle(
             user_id=user.id,
-            start_time=datetime.utcnow() - timedelta(days=1),
-            end_time=datetime.utcnow(),
+            start_time=datetime.now(UTC) - timedelta(days=1),
+            end_time=datetime.now(UTC),
             is_completed=True,
             words_learned=5,
             time_spent=10.0,
         )
-        db.add(cycle)
-    db.commit()
+        user_service.db.add(cycle)
+    user_service.db.commit()
     
     # Get statistics
     stats = user_service.get_user_statistics(user.id, days=30)
@@ -165,7 +166,7 @@ def test_log_user_activity(user_service: UserService) -> None:
     
     # Check log entry
     log = (
-        db.query(UserLog)
+        user_service.db.query(UserLog)
         .filter(
             and_(
                 UserLog.user_id == user.id,

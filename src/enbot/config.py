@@ -1,12 +1,40 @@
 """Configuration settings for the bot."""
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
+# Define base directory
+BASE_DIR = Path(__file__).parent.parent.parent
+
+# Define data directory
+DATA_DIR = BASE_DIR / "data"
+
+# Define subdirectories
+DICTIONARIES_DIR = DATA_DIR / "dictionaries"
+MEDIA_DIR = DATA_DIR / "media"
+PRONUNCIATIONS_DIR = MEDIA_DIR / "pronunciations"
+IMAGES_DIR = MEDIA_DIR / "images"
+
+# Learning settings
+REPETITION_INTERVALS = [1, 3, 7, 14, 30]  # days between reviews
+REPETITION_HISTORY_PERCENTAGE = 0.3  # 30% of words in cycle should be from history
+
 # Load environment variables from .env file
 load_dotenv()
+
+
+@dataclass
+class PathSettings:
+    """Path configuration settings."""
+    base_dir: Path = BASE_DIR
+    data_dir: Path = DATA_DIR
+    dictionaries_dir: Path = DICTIONARIES_DIR
+    media_dir: Path = MEDIA_DIR
+    pronunciations_dir: Path = PRONUNCIATIONS_DIR
+    images_dir: Path = IMAGES_DIR
 
 
 @dataclass
@@ -57,6 +85,8 @@ class LearningSettings:
     min_priority: int = int(os.getenv("MIN_PRIORITY", "1"))
     max_priority: int = int(os.getenv("MAX_PRIORITY", "5"))
     default_priority: int = int(os.getenv("DEFAULT_PRIORITY", "3"))
+    repetition_intervals: list[int] = field(default_factory=lambda: REPETITION_INTERVALS)
+    repetition_history_percentage: float = REPETITION_HISTORY_PERCENTAGE
 
 
 @dataclass
@@ -66,6 +96,11 @@ class NotificationSettings:
     review_reminder_interval: int = int(os.getenv("REVIEW_REMINDER_INTERVAL", "24"))
     achievement_check_interval: int = int(os.getenv("ACHIEVEMENT_CHECK_INTERVAL", "24"))
     streak_check_interval: int = int(os.getenv("STREAK_CHECK_INTERVAL", "24"))
+
+
+def get_path_settings() -> PathSettings:
+    """Get path settings."""
+    return PathSettings()
 
 
 def get_database_settings() -> DatabaseSettings:
@@ -101,6 +136,7 @@ def get_notification_settings() -> NotificationSettings:
 @dataclass
 class Settings:
     """Main settings class that combines all configuration settings."""
+    paths: PathSettings = field(default_factory=get_path_settings)
     database: DatabaseSettings = field(default_factory=get_database_settings)
     logging: LoggingSettings = field(default_factory=get_logging_settings)
     bot: BotSettings = field(default_factory=get_bot_settings)

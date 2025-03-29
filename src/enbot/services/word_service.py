@@ -1,8 +1,9 @@
 """Service for managing words in the system."""
+from datetime import datetime, UTC
 from typing import List, Optional, Dict, Any
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from enbot.models.models import Word, UserWord, User
 from enbot.services.content_generator import ContentGenerator
@@ -24,7 +25,7 @@ class WordService:
         """Get a word by its text."""
         return self.db.query(Word).filter(Word.text == text.lower()).first()
 
-    def create_word(self, text: str, user_id: int, priority: int = 5) -> Word:
+    def create_word(self, text: str, user_id: int, priority: int = 0) -> Word:
         """Create a new word and generate its content."""
         # Check if word already exists
         existing_word = self.get_word_by_text(text)
@@ -32,32 +33,29 @@ class WordService:
             return existing_word
 
         # Generate word content
-        content = self.content_generator.generate_word_content(text)
+        word_obj, _ = self.content_generator.generate_word_content(
+            text,
+            target_lang="uk",  # TODO: Get from user settings
+            native_lang="en"   # TODO: Get from user settings
+        )
         
         # Create word
-        word = Word(
-            text=text.lower(),
-            translation=content["translation"],
-            transcription=content["transcription"],
-            pronunciation_file=content["pronunciation_file"],
-            image_file=content["image_file"],
-        )
-        self.db.add(word)
+        self.db.add(word_obj)
         self.db.commit()
-        self.db.refresh(word)
+        self.db.refresh(word_obj)
 
         # Create user word association
         user_word = UserWord(
             user_id=user_id,
-            word_id=word.id,
+            word_id=word_obj.id,
             priority=priority,
         )
         self.db.add(user_word)
         self.db.commit()
 
-        return word
+        return word_obj
 
-    def create_words(self, texts: List[str], user_id: int, priority: int = 5) -> List[Word]:
+    def create_words(self, texts: List[str], user_id: int, priority: int = 0) -> List[Word]:
         """Create multiple words at once."""
         words = []
         for text in texts:
@@ -87,9 +85,9 @@ class WordService:
 
         # Delete associated files
         if word.pronunciation_file:
-            self.content_generator.delete_pronunciation(word.pronunciation_file)
+            self.content_generator.delete_file(word.pronunciation_file)
         if word.image_file:
-            self.content_generator.delete_image(word.image_file)
+            self.content_generator.delete_file(word.image_file)
 
         # Delete word
         self.db.delete(word)
@@ -219,7 +217,8 @@ class WordService:
             .filter(
                 and_(
                     UserWord.user_id == user_id,
-                    UserWord.next_review <= datetime.utcnow(),
+                    UserWord.is_learned == True,
+                    UserWord.next_review <= datetime.now(UTC),
                 )
             )
             .order_by(UserWord.next_review)

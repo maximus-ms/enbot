@@ -1,6 +1,7 @@
 """Content generation service using Faker."""
 from pathlib import Path
 from typing import List, Optional
+import os
 
 from faker import Faker
 
@@ -33,7 +34,7 @@ class ContentGenerator:
         # In a real implementation, this would generate an audio file
         # For now, we'll just return a fake file path
         filename = f"{word.lower().replace(' ', '_')}.mp3"
-        return str(Path(settings.PRONUNCIATIONS_DIR) / filename)
+        return str(settings.paths.pronunciations_dir / filename)
 
     @staticmethod
     def generate_image(word: str) -> str:
@@ -41,7 +42,7 @@ class ContentGenerator:
         # In a real implementation, this would generate an image file
         # For now, we'll just return a fake file path
         filename = f"{word.lower().replace(' ', '_')}.jpg"
-        return str(Path(settings.IMAGES_DIR) / filename)
+        return str(settings.paths.images_dir / filename)
 
     @staticmethod
     def generate_examples(word: str, translation: str, count: int = 3) -> List[Example]:
@@ -79,4 +80,16 @@ class ContentGenerator:
             language_pair=f"{target_lang}-{native_lang}",
         )
 
-        return word_obj, examples 
+        return word_obj, examples
+
+    @staticmethod
+    def generate_example(word: str, target_lang: str) -> str:
+        """Generate example sentence for word."""
+        # TODO: Implement example generation
+        return f"This is an example with {word}"
+
+    @staticmethod
+    def delete_file(file_path: str) -> None:
+        """Delete a file from storage."""
+        if os.path.exists(file_path):
+            os.remove(file_path) 

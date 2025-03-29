@@ -62,7 +62,7 @@ class EnBot:
             logger.info("Database initialized")
 
             # Create application
-            self.application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+            self.application = Application.builder().token(settings.bot.token).build()
             logger.info("Application created")
 
             # Add conversation handler

@@ -1,12 +1,12 @@
 """User service for managing user data and preferences."""
-from datetime import datetime
+from datetime import datetime, timedelta, UTC
 from typing import List, Optional
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from enbot.config import settings
-from enbot.models.models import User, UserLog, UserWord, Word
+from enbot.models.models import User, UserLog, UserWord, Word, LearningCycle
 from enbot.services.content_generator import ContentGenerator
 
 
@@ -137,6 +137,7 @@ class UserService:
                             "INFO",
                             "word_priority_updated",
                         )
+                        added_words.append(existing_user_word)
                     continue
 
                 user_word = UserWord(
@@ -199,7 +200,7 @@ class UserService:
             raise ValueError(f"User {user_id} not found")
 
         # Calculate date range
-        end_date = datetime.utcnow()
+        end_date = datetime.now(UTC)
         start_date = end_date - timedelta(days=days)
 
         # Get completed cycles in date range
