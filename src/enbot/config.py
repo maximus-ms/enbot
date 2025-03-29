@@ -1,6 +1,6 @@
 """Configuration settings for the bot."""
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -24,13 +24,16 @@ class LoggingSettings:
     file: Optional[str] = os.getenv("LOG_FILE")
 
 
+def get_admin_ids() -> list[int]:
+    """Get admin IDs from environment variable."""
+    return [int(id_) for id_ in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if id_]
+
+
 @dataclass
 class BotSettings:
     """Bot configuration settings."""
     token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    admin_ids: list[int] = [
-        int(id_) for id_ in os.getenv("TELEGRAM_ADMIN_IDS", "").split(",") if id_
-    ]
+    admin_ids: list[int] = field(default_factory=get_admin_ids)
     webhook_url: Optional[str] = os.getenv("TELEGRAM_WEBHOOK_URL")
     webhook_port: int = int(os.getenv("TELEGRAM_WEBHOOK_PORT", "8443"))
 
@@ -65,15 +68,45 @@ class NotificationSettings:
     streak_check_interval: int = int(os.getenv("STREAK_CHECK_INTERVAL", "24"))
 
 
+def get_database_settings() -> DatabaseSettings:
+    """Get database settings."""
+    return DatabaseSettings()
+
+
+def get_logging_settings() -> LoggingSettings:
+    """Get logging settings."""
+    return LoggingSettings()
+
+
+def get_bot_settings() -> BotSettings:
+    """Get bot settings."""
+    return BotSettings()
+
+
+def get_content_settings() -> ContentSettings:
+    """Get content settings."""
+    return ContentSettings()
+
+
+def get_learning_settings() -> LearningSettings:
+    """Get learning settings."""
+    return LearningSettings()
+
+
+def get_notification_settings() -> NotificationSettings:
+    """Get notification settings."""
+    return NotificationSettings()
+
+
 @dataclass
 class Settings:
     """Main settings class that combines all configuration settings."""
-    database: DatabaseSettings = DatabaseSettings()
-    logging: LoggingSettings = LoggingSettings()
-    bot: BotSettings = BotSettings()
-    content: ContentSettings = ContentSettings()
-    learning: LearningSettings = LearningSettings()
-    notification: NotificationSettings = NotificationSettings()
+    database: DatabaseSettings = field(default_factory=get_database_settings)
+    logging: LoggingSettings = field(default_factory=get_logging_settings)
+    bot: BotSettings = field(default_factory=get_bot_settings)
+    content: ContentSettings = field(default_factory=get_content_settings)
+    learning: LearningSettings = field(default_factory=get_learning_settings)
+    notification: NotificationSettings = field(default_factory=get_notification_settings)
 
     def validate(self) -> None:
         """Validate settings and raise ValueError if invalid."""
