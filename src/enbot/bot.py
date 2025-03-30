@@ -18,10 +18,12 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler,
     filters,
+    ContextTypes,
 )
 
 from enbot.config import settings
 from enbot.models.base import SessionLocal
+from enbot.models.models import User
 from enbot.services.learning_service import LearningService
 from enbot.services.user_service import UserService
 
@@ -75,12 +77,21 @@ async def start(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            f"Welcome to EnBot, {user.first_name}! 👋\n\n"
-            "I'll help you learn English vocabulary effectively.\n"
-            "What would you like to do?",
-            reply_markup=reply_markup,
-        )
+        # Handle both initial command and callback queries
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                f"Welcome to EnBot, {user.first_name}! 👋\n\n"
+                "I'll help you learn English vocabulary effectively.\n"
+                "What would you like to do?",
+                reply_markup=reply_markup,
+            )
+        else:
+            await update.message.reply_text(
+                f"Welcome to EnBot, {user.first_name}! 👋\n\n"
+                "I'll help you learn English vocabulary effectively.\n"
+                "What would you like to do?",
+                reply_markup=reply_markup,
+            )
         
         return MAIN_MENU
         
@@ -109,54 +120,63 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     return MAIN_MENU
 
 
-async def start_learning(update: Update, context: CallbackContext) -> int:
-    """Start a learning session."""
-    query = update.callback_query
-    user = query.from_user
+async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Start a new learning cycle."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.message.reply_text("Please /start first to register.")
+        return
+
     db = SessionLocal()
-    
     try:
         learning_service = LearningService(db)
-        user_service = UserService(db)
-        
-        # Get or create active cycle
+
+        # Check if there's an active cycle
         cycle = learning_service.get_active_cycle(user.id)
-        if not cycle:
-            cycle = learning_service.create_new_cycle(user.id)
-        
-        # Get words for learning
-        words = learning_service.get_words_for_cycle(cycle.id)
-        if not words:
-            await query.edit_message_text(
-                "No words available for learning. Add some words first!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-                ]),
+        if cycle:
+            await update.message.reply_text(
+                "You already have an active learning cycle. Complete it first!"
             )
-            return MAIN_MENU
-        
-        # Show first word
-        word = words[0]
+            return
+
+        # Create a new cycle
+        cycle = learning_service.create_new_cycle(user.id)
+
+        # Get words for learning
+        words = learning_service.get_words_for_cycle(user.id, settings.learning.words_per_cycle)
+        if not words:
+            await update.message.reply_text(
+                "No words available for learning. Add some words first!"
+            )
+            return
+
+        # Add words to cycle
+        cycle_words = learning_service.add_words_to_cycle(cycle.id, words)
+        word = words[0].word
+        example = word.examples[0] if word.examples else None
+
+        # Show the first word
         keyboard = [
             [
-                InlineKeyboardButton("Show Translation", callback_data=f"show_translation_{word.id}"),
-                InlineKeyboardButton("Show Examples", callback_data=f"show_examples_{word.id}"),
-            ],
-            [
-                InlineKeyboardButton("I Know This", callback_data=f"know_word_{word.id}"),
-                InlineKeyboardButton("I Don't Know", callback_data=f"dont_know_{word.id}"),
-            ],
-            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                InlineKeyboardButton("I know this", callback_data=f"know_{word.id}"),
+                InlineKeyboardButton("Don't know", callback_data=f"dont_know_{word.id}"),
+            ]
         ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = f"Let's learn some words!\n\n" \
+                 f"Word: {word.text}\n" \
+                 f"Translation: {word.translation}"
         
-        await query.edit_message_text(
-            f"Let's learn: {word.text}\n\n"
-            "What would you like to do?",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+        if example:
+            message += f"\nExample: {example.sentence}"
+
+        await update.message.reply_text(
+            message,
+            reply_markup=reply_markup,
         )
         
         return LEARNING
-        
     finally:
         db.close()
 
@@ -181,9 +201,12 @@ async def add_words(update: Update, context: CallbackContext) -> int:
 
 async def handle_add_words(update: Update, context: CallbackContext) -> int:
     """Handle adding new words."""
-    user = update.effective_user
+    user = get_user_from_update(update)
+    if not user:
+        await update.message.reply_text("Please /start first to register.")
+        return MAIN_MENU
+
     db = SessionLocal()
-    
     try:
         user_service = UserService(db)
         words = [word.strip() for word in update.message.text.split("\n") if word.strip()]
@@ -216,10 +239,17 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
 
 async def show_statistics(update: Update, context: CallbackContext) -> int:
     """Show user statistics."""
-    query = update.callback_query
-    user = query.from_user
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
+
     db = SessionLocal()
-    
     try:
         user_service = UserService(db)
         stats = user_service.get_user_statistics(user.id)
@@ -233,7 +263,7 @@ async def show_statistics(update: Update, context: CallbackContext) -> int:
             f"Average Time per Cycle: {stats['average_time_per_cycle']:.1f} minutes\n"
         )
         
-        await query.edit_message_text(
+        await update.callback_query.edit_message_text(
             message,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
@@ -268,20 +298,27 @@ async def show_settings(update: Update, context: CallbackContext) -> int:
 
 async def handle_language_selection(update: Update, context: CallbackContext) -> int:
     """Handle language selection."""
-    query = update.callback_query
-    user = query.from_user
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
+
     db = SessionLocal()
-    
     try:
         user_service = UserService(db)
-        language = query.data.split("_")[1]
+        language = update.callback_query.data.split("_")[1]
         
-        if query.data.startswith("native_"):
+        if update.callback_query.data.startswith("native_"):
             user_service.update_user_settings(user.id, native_language=language)
         else:
             user_service.update_user_settings(user.id, target_language=language)
         
-        await query.edit_message_text(
+        await update.callback_query.edit_message_text(
             "Language settings updated successfully!",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
@@ -290,6 +327,20 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
         
         return MAIN_MENU
         
+    finally:
+        db.close()
+
+
+def get_user_from_update(update: Update) -> Optional[User]:
+    """Get user from database based on update."""
+    user = update.effective_user
+    if not user:
+        return None
+
+    db = SessionLocal()
+    try:
+        user_service = UserService(db)
+        return user_service.get_user_by_telegram_id(user.id)
     finally:
         db.close()
 

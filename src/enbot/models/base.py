@@ -46,5 +46,4 @@ def get_db() -> Generator[Session, None, None]:
 
 def init_db() -> None:
     """Initialize database."""
-    Base.metadata.drop_all(bind=engine)  # Drop all tables first
-    Base.metadata.create_all(bind=engine)  # Create tables with new schema 
+    Base.metadata.create_all(bind=engine)  # Create tables if they don't exist 

@@ -23,20 +23,38 @@ class WordService:
 
     def get_word_by_text(self, text: str) -> Optional[Word]:
         """Get a word by its text."""
-        return self.db.query(Word).filter(Word.text == text.lower()).first()
+        return self.db.query(Word).filter(Word.text.ilike(text)).first()
 
     def create_word(self, text: str, user_id: int, priority: int = 0) -> Word:
         """Create a new word and generate its content."""
+        # Get user settings
+        user = self.db.query(User).filter(User.telegram_id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
         # Check if word already exists
         existing_word = self.get_word_by_text(text)
         if existing_word:
+            # Create user word association if it doesn't exist
+            user_word = self.db.query(UserWord).filter(
+                UserWord.user_id == user.id,
+                UserWord.word_id == existing_word.id
+            ).first()
+            if not user_word:
+                user_word = UserWord(
+                    user_id=user.id,
+                    word_id=existing_word.id,
+                    priority=priority,
+                )
+                self.db.add(user_word)
+                self.db.commit()
             return existing_word
 
         # Generate word content
         word_obj, _ = self.content_generator.generate_word_content(
             text,
-            target_lang="uk",  # TODO: Get from user settings
-            native_lang="en"   # TODO: Get from user settings
+            target_lang=user.target_language,
+            native_lang=user.native_language
         )
         
         # Create word
@@ -46,7 +64,7 @@ class WordService:
 
         # Create user word association
         user_word = UserWord(
-            user_id=user_id,
+            user_id=user.id,
             word_id=word_obj.id,
             priority=priority,
         )
@@ -57,10 +75,55 @@ class WordService:
 
     def create_words(self, texts: List[str], user_id: int, priority: int = 0) -> List[Word]:
         """Create multiple words at once."""
+        # Get user settings
+        user = self.db.query(User).filter(User.telegram_id == user_id).first()
+        if not user:
+            raise ValueError("User not found")
+
         words = []
         for text in texts:
-            word = self.create_word(text, user_id, priority)
-            words.append(word)
+            # Check if word already exists
+            existing_word = self.get_word_by_text(text)
+            if existing_word:
+                # Create user word association if it doesn't exist
+                user_word = self.db.query(UserWord).filter(
+                    UserWord.user_id == user.id,
+                    UserWord.word_id == existing_word.id
+                ).first()
+                if not user_word:
+                    user_word = UserWord(
+                        user_id=user.id,
+                        word_id=existing_word.id,
+                        priority=priority,
+                    )
+                    self.db.add(user_word)
+                    self.db.commit()
+                words.append(existing_word)
+                continue
+
+            # Generate word content
+            word_obj, _ = self.content_generator.generate_word_content(
+                text,
+                target_lang=user.target_language,
+                native_lang=user.native_language
+            )
+            
+            # Create word
+            self.db.add(word_obj)
+            self.db.commit()
+            self.db.refresh(word_obj)
+
+            # Create user word association
+            user_word = UserWord(
+                user_id=user.id,
+                word_id=word_obj.id,
+                priority=priority,
+            )
+            self.db.add(user_word)
+            self.db.commit()
+
+            words.append(word_obj)
+
         return words
 
     def update_word(self, word_id: int, **kwargs) -> Optional[Word]:

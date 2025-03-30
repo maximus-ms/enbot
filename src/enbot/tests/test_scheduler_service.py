@@ -100,31 +100,35 @@ async def test_daily_notifications(
     # Mock current time to match user's day_start_hour
     mock_time = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)  # 9:00 AM UTC
     
-    # Mock datetime.now(UTC) in all modules
-    with patch("enbot.models.models.datetime") as mock_models_datetime, \
-         patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
-         patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
-         patch("enbot.services.word_service.datetime") as mock_word_datetime:
-        mock_models_datetime.now.return_value = mock_time
-        mock_notification_datetime.now.return_value = mock_time
-        mock_scheduler_datetime.now.return_value = mock_time
-        mock_word_datetime.now.return_value = mock_time
+    # Mock notification service to return only our test user
+    with patch.object(scheduler_service.notification_service, 'get_users_for_notification') as mock_get_users:
+        mock_get_users.return_value = [test_user]
         
-        # Set running flag to True
-        scheduler_service.running = True
-        
-        # Run daily notifications task with timeout
-        try:
-            await asyncio.wait_for(
-                scheduler_service._run_daily_notifications(),
-                timeout=3.0
-            )
-        except asyncio.TimeoutError:
-            # This is expected since the task runs in an infinite loop
-            pass
+        # Mock datetime.now(UTC) in all modules
+        with patch("enbot.models.models.datetime") as mock_models_datetime, \
+             patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
+             patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
+             patch("enbot.services.word_service.datetime") as mock_word_datetime:
+            mock_models_datetime.now.return_value = mock_time
+            mock_notification_datetime.now.return_value = mock_time
+            mock_scheduler_datetime.now.return_value = mock_time
+            mock_word_datetime.now.return_value = mock_time
+            
+            # Set running flag to True
+            scheduler_service.running = True
+            
+            # Run daily notifications task with timeout
+            try:
+                await asyncio.wait_for(
+                    scheduler_service._run_daily_notifications(),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                # This is expected since the task runs in an infinite loop
+                pass
     
-    # Check if message was sent
-    mock_bot.send_message.assert_called_once()
+    # Check if message was sent exactly once
+    assert mock_bot.send_message.call_count == 1
     call_args = mock_bot.send_message.call_args[1]
     assert call_args["chat_id"] == test_user.telegram_id
     assert "Good morning" in call_args["text"]
@@ -237,34 +241,42 @@ async def test_achievement_checks(
     # Mock current time
     mock_time = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)  # 9:00 AM UTC
     
-    # Mock datetime.now(UTC) in all modules
-    with patch("enbot.models.models.datetime") as mock_models_datetime, \
-         patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
-         patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
-         patch("enbot.services.word_service.datetime") as mock_word_datetime:
-        mock_models_datetime.now.return_value = mock_time
-        mock_notification_datetime.now.return_value = mock_time
-        mock_scheduler_datetime.now.return_value = mock_time
-        mock_word_datetime.now.return_value = mock_time
+    # Mock database query to return only our test user
+    with patch.object(scheduler_service.db, 'query') as mock_query, \
+         patch.object(scheduler_service.notification_service, 'get_achievement_message') as mock_get_achievement:
+        # Mock the query chain to return our test user
+        mock_query.return_value = mock_query
+        mock_query.all.return_value = [test_user]
+        mock_get_achievement.return_value = "🎉 Achievement Unlocked!\n\nYou've learned your first 10 words!\nKeep up the great work! 🌟"
         
-        # Set running flag to True
-        scheduler_service.running = True
-        
-        # Run achievement checks task with timeout
-        try:
-            await asyncio.wait_for(
-                scheduler_service._run_achievement_checks(),
-                timeout=3.0
-            )
-        except asyncio.TimeoutError:
-            # This is expected since the task runs in an infinite loop
-            pass
-        
-        # Check if message was sent
-        mock_bot.send_message.assert_called_once()
-        call_args = mock_bot.send_message.call_args[1]
-        assert call_args["chat_id"] == test_user.telegram_id
-        assert "Achievement Unlocked" in call_args["text"]
+        # Mock datetime.now(UTC) in all modules
+        with patch("enbot.models.models.datetime") as mock_models_datetime, \
+             patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
+             patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
+             patch("enbot.services.word_service.datetime") as mock_word_datetime:
+            mock_models_datetime.now.return_value = mock_time
+            mock_notification_datetime.now.return_value = mock_time
+            mock_scheduler_datetime.now.return_value = mock_time
+            mock_word_datetime.now.return_value = mock_time
+            
+            # Set running flag to True
+            scheduler_service.running = True
+            
+            # Run achievement checks task with timeout
+            try:
+                await asyncio.wait_for(
+                    scheduler_service._run_achievement_checks(),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                # This is expected since the task runs in an infinite loop
+                pass
+    
+    # Check if message was sent exactly once
+    assert mock_bot.send_message.call_count == 1
+    call_args = mock_bot.send_message.call_args[1]
+    assert call_args["chat_id"] == test_user.telegram_id
+    assert "Achievement Unlocked" in call_args["text"]
 
 
 @pytest.mark.asyncio
@@ -290,34 +302,42 @@ async def test_streak_checks(
     # Mock current time
     mock_time = datetime(2024, 1, 1, 9, 0, tzinfo=UTC)  # 9:00 AM UTC
     
-    # Mock datetime.now(UTC) in all modules
-    with patch("enbot.models.models.datetime") as mock_models_datetime, \
-         patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
-         patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
-         patch("enbot.services.word_service.datetime") as mock_word_datetime:
-        mock_models_datetime.now.return_value = mock_time
-        mock_notification_datetime.now.return_value = mock_time
-        mock_scheduler_datetime.now.return_value = mock_time
-        mock_word_datetime.now.return_value = mock_time
+    # Mock database query to return only our test user
+    with patch.object(scheduler_service.db, 'query') as mock_query, \
+         patch.object(scheduler_service.notification_service, 'get_streak_message') as mock_get_streak:
+        # Mock the query chain to return our test user
+        mock_query.return_value = mock_query
+        mock_query.all.return_value = [test_user]
+        mock_get_streak.return_value = "🔥 Amazing Streak!\n\nYou've completed your learning sessions for 7 days in a row!\nYou're on fire! Keep it up! 🌟"
         
-        # Set running flag to True
-        scheduler_service.running = True
-        
-        # Run streak checks task with timeout
-        try:
-            await asyncio.wait_for(
-                scheduler_service._run_streak_checks(),
-                timeout=3.0
-            )
-        except asyncio.TimeoutError:
-            # This is expected since the task runs in an infinite loop
-            pass
-        
-        # Check if message was sent
-        mock_bot.send_message.assert_called_once()
-        call_args = mock_bot.send_message.call_args[1]
-        assert call_args["chat_id"] == test_user.telegram_id
-        assert "Amazing Streak" in call_args["text"]
+        # Mock datetime.now(UTC) in all modules
+        with patch("enbot.models.models.datetime") as mock_models_datetime, \
+             patch("enbot.services.notification_service.datetime") as mock_notification_datetime, \
+             patch("enbot.services.scheduler_service.datetime") as mock_scheduler_datetime, \
+             patch("enbot.services.word_service.datetime") as mock_word_datetime:
+            mock_models_datetime.now.return_value = mock_time
+            mock_notification_datetime.now.return_value = mock_time
+            mock_scheduler_datetime.now.return_value = mock_time
+            mock_word_datetime.now.return_value = mock_time
+            
+            # Set running flag to True
+            scheduler_service.running = True
+            
+            # Run streak checks task with timeout
+            try:
+                await asyncio.wait_for(
+                    scheduler_service._run_streak_checks(),
+                    timeout=3.0
+                )
+            except asyncio.TimeoutError:
+                # This is expected since the task runs in an infinite loop
+                pass
+    
+    # Check if message was sent exactly once
+    assert mock_bot.send_message.call_count == 1
+    call_args = mock_bot.send_message.call_args[1]
+    assert call_args["chat_id"] == test_user.telegram_id
+    assert "Amazing Streak" in call_args["text"]
 
 
 @pytest.mark.asyncio

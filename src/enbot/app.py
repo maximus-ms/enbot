@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 
 from enbot.config import settings
-from enbot.models.base import init_db
+from enbot.models.base import init_db, SessionLocal
 from enbot.services.scheduler_service import SchedulerService
 from enbot.bot import (
     start,
@@ -50,6 +50,7 @@ class EnBot:
         self.application: Optional[Application] = None
         self.scheduler: Optional[SchedulerService] = None
         self.running = False
+        self.db = None
 
     async def start(self) -> None:
         """Start the application."""
@@ -59,6 +60,7 @@ class EnBot:
         try:
             # Initialize database
             init_db()
+            self.db = SessionLocal()
             logger.info("Database initialized")
 
             # Create application
@@ -96,7 +98,7 @@ class EnBot:
             logger.info("Handlers added")
 
             # Create scheduler service
-            self.scheduler = SchedulerService(self.application.bot)
+            self.scheduler = SchedulerService(self.application.bot, self.db)
             await self.scheduler.start()
             logger.info("Scheduler service started")
 
@@ -122,6 +124,7 @@ class EnBot:
             # Stop scheduler service
             if self.scheduler:
                 await self.scheduler.stop()
+                self.scheduler = None
                 logger.info("Scheduler service stopped")
 
             # Stop application
@@ -129,12 +132,21 @@ class EnBot:
                 await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
+                self.application = None
                 logger.info("Application stopped")
+
+            # Close database session
+            if self.db:
+                self.db.close()
+                logger.info("Database session closed")
 
             self.running = False
 
         except Exception as e:
             logger.error("Error while stopping application: %s", str(e))
+            self.running = False
+            self.application = None
+            self.scheduler = None
             raise
 
     def run(self) -> None:
@@ -142,9 +154,6 @@ class EnBot:
         # Create event loop
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-        # Create bot instance
-        bot = EnBot()
 
         # Handle signals
         def signal_handler(signum, frame):
@@ -156,7 +165,7 @@ class EnBot:
 
         try:
             # Start bot
-            loop.run_until_complete(bot.start())
+            loop.run_until_complete(self.start())
 
             # Run event loop
             loop.run_forever()
@@ -165,7 +174,7 @@ class EnBot:
             logger.info("Received keyboard interrupt")
         finally:
             # Stop bot
-            loop.run_until_complete(bot.stop())
+            loop.run_until_complete(self.stop())
             loop.close()
 
 

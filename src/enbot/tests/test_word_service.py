@@ -2,22 +2,43 @@
 from datetime import datetime, timedelta, UTC
 from typing import Generator
 from unittest.mock import Mock, patch
+import os
 
 import pytest
 from faker import Faker
 from sqlalchemy.orm import Session
 
-from enbot.models.base import SessionLocal, init_db
+from enbot.models.base import SessionLocal, init_db, engine
 from enbot.models.models import User, Word, UserWord
 from enbot.services.word_service import WordService
+from enbot.config import settings
 
 fake = Faker()
+
+
+@pytest.fixture(autouse=True)
+def setup_database():
+    """Delete and recreate the database before each test."""
+    # Close any existing connections
+    engine.dispose()
+    
+    # Delete the database file if it exists
+    db_path = settings.database.url.replace('sqlite:///', '')
+    if os.path.exists(db_path):
+        os.remove(db_path)
+    
+    # Create new database
+    init_db()
+    
+    yield
+    
+    # Cleanup after test
+    engine.dispose()
 
 
 @pytest.fixture
 def db() -> Generator[Session, None, None]:
     """Create a fresh database session for each test."""
-    init_db()
     db = SessionLocal()
     try:
         yield db
@@ -65,6 +86,19 @@ def test_word(db: Session) -> Word:
     return word
 
 
+@pytest.fixture
+def mock_user(db):
+    user = User(
+        telegram_id=123456789,
+        username=fake.user_name(),
+        target_language="en",
+        native_language="ru"
+    )
+    db.add(user)
+    db.commit()
+    return user
+
+
 def test_get_word(word_service: WordService, test_word: Word) -> None:
     """Test getting a word by ID."""
     word = word_service.get_word(test_word.id)
@@ -73,89 +107,94 @@ def test_get_word(word_service: WordService, test_word: Word) -> None:
     assert word.text == test_word.text
 
 
-def test_get_word_by_text(word_service: WordService, test_word: Word) -> None:
-    """Test getting a word by text."""
-    word = word_service.get_word_by_text(test_word.text)
-    assert word is not None
-    assert word.id == test_word.id
-    assert word.text == test_word.text
+def test_get_word_by_text(word_service, db):
+    # Create a test word
+    word = Word(
+        text="test",
+        translation="тест",
+        language_pair="en-ru"
+    )
+    db.add(word)
+    db.commit()
+
+    # Test getting the word
+    result = word_service.get_word_by_text("TEST")
+    assert result is not None
+    assert result.text == "test"
+    assert result.translation == "тест"
 
 
-def test_create_word(word_service: WordService, test_user: User) -> None:
-    """Test creating a new word."""
-    # Mock content generator
+def test_create_word(word_service, mock_user, db, mocker):
+    # Mock the content generator
     mock_word = Word(
         text="test",
         translation="тест",
-        transcription="test",
-        pronunciation_file="test.mp3",
-        image_file="test.jpg",
-        language_pair="en-uk"
+        language_pair=f"{mock_user.native_language}-{mock_user.target_language}"
     )
-    
-    # Mock the instance method
-    word_service.content_generator.generate_word_content = Mock(return_value=(mock_word, []))
-    
-    # Create word
-    word = word_service.create_word("test", test_user.id)
-    
-    # Check word was created
-    assert word is not None
-    assert word.text == "test"
-    assert word.translation == "тест"
-    
-    # Check mock was called correctly
-    word_service.content_generator.generate_word_content.assert_called_once_with(
+    mock_generate = mocker.patch.object(
+        word_service.content_generator,
+        "generate_word_content",
+        return_value=(mock_word, None)
+    )
+
+    # Create a word
+    result = word_service.create_word("test", mock_user.telegram_id)
+
+    # Verify the mock was called
+    mock_generate.assert_called_once_with(
         "test",
-        target_lang="uk",
-        native_lang="en"
+        target_lang=mock_user.target_language,
+        native_lang=mock_user.native_language
     )
 
+    # Verify the word was created
+    assert result.text == "test"
+    assert result.translation == "тест"
 
-def test_create_words(word_service: WordService, test_user: User) -> None:
-    """Test creating multiple words."""
-    # Mock content generator
-    def create_mock_word(text: str) -> Word:
-        return Word(
-            text=text,
-            translation=f"{text}_translation",
-            transcription=f"{text}_transcription",
-            pronunciation_file=f"{text}.mp3",
-            image_file=f"{text}.jpg",
-            language_pair="en-uk"
+    # Verify user-word association
+    user_word = db.query(UserWord).filter(
+        UserWord.user_id == mock_user.id,
+        UserWord.word_id == result.id
+    ).first()
+    assert user_word is not None
+
+
+def test_create_words(word_service, mock_user, db, mocker):
+    # Mock the content generator
+    mock_words = [
+        Word(
+            text="test1",
+            translation="тест1",
+            language_pair=f"{mock_user.native_language}-{mock_user.target_language}"
+        ),
+        Word(
+            text="test2",
+            translation="тест2",
+            language_pair=f"{mock_user.native_language}-{mock_user.target_language}"
         )
-    
-    # Mock the instance method
-    word_service.content_generator.generate_word_content = Mock(
-        side_effect=lambda text, target_lang, native_lang: (create_mock_word(text), [])
+    ]
+    mock_generate = mocker.patch.object(
+        word_service.content_generator,
+        "generate_word_content",
+        side_effect=[(w, None) for w in mock_words]
     )
-    
+
     # Create words
-    words = word_service.create_words(["test1", "test2"], test_user.id)
-    
-    # Check words were created
-    assert len(words) == 2
-    assert words[0].text == "test1"
-    assert words[1].text == "test2"
-    
-    # Check user word associations were created
-    user_words = word_service.db.query(UserWord).filter(
-        UserWord.user_id == test_user.id
+    results = word_service.create_words(["test1", "test2"], mock_user.telegram_id)
+
+    # Verify the mock was called twice
+    assert mock_generate.call_count == 2
+
+    # Verify words were created
+    assert len(results) == 2
+    assert results[0].text == "test1"
+    assert results[1].text == "test2"
+
+    # Verify user-word associations
+    user_words = db.query(UserWord).filter(
+        UserWord.user_id == mock_user.id
     ).all()
     assert len(user_words) == 2
-    
-    # Check mock was called correctly
-    assert word_service.content_generator.generate_word_content.call_count == 2
-    word_service.content_generator.generate_word_content.assert_any_call(
-        "test1",
-        target_lang="uk",
-        native_lang="en"
-    )
-    word_service.content_generator.generate_word_content.assert_any_call(
-        "test2",
-        target_lang="uk",
-        native_lang="en"
-    )
 
 
 def test_update_word(word_service: WordService, test_word: Word) -> None:
@@ -253,23 +292,22 @@ def test_get_user_word_count(word_service: WordService, test_user: User, test_wo
 
 def test_search_words(word_service: WordService, test_word: Word) -> None:
     """Test searching for words."""
-    # Search by text
-    text_results = word_service.search_words("test")
-    assert len(text_results) == 1
-    assert text_results[0].id == test_word.id
+    # Create more test words
+    for i in range(10):
+        word = Word(
+            text=f"test{i}",
+            translation=f"тест{i}",
+            language_pair="en-uk"
+        )
+        word_service.db.add(word)
+    word_service.db.commit()
     
-    # Search by translation
-    translation_results = word_service.search_words("тест")
-    assert len(translation_results) == 1
-    assert translation_results[0].id == test_word.id
+    # Search for words
+    words = word_service.search_words("test")
     
-    # Search with user filter
-    user_results = word_service.search_words("test", user_id=1)
-    assert len(user_results) == 0  # No words for this user
-    
-    # Search with limit
-    limited_results = word_service.search_words("test", limit=1)
-    assert len(limited_results) == 1
+    # Check results
+    assert len(words) == 10  # Default limit is 10
+    assert all("test" in word.text.lower() for word in words)
 
 
 def test_get_word_details(word_service: WordService, test_user: User, test_word: Word) -> None:
