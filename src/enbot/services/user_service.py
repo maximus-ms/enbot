@@ -25,21 +25,45 @@ class UserService:
         """Get user by telegram ID."""
         return self.db.query(User).filter(User.telegram_id == telegram_id).first()
 
-    def get_user_words(self, user_id: int) -> List[UserWord]:
-        """Get all unlearned words for a user."""
-        words = (
+    def get_user_words(
+        self,
+        user_id: int,
+        learned: Optional[bool] = None,
+        priority: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> List[UserWord]:
+        """Get all words for a user with optional filtering."""
+        query = (
             self.db.query(UserWord)
-            .filter(
-                and_(
-                    UserWord.user_id == user_id,
-                    UserWord.is_learned == False
-                )
-            )
-            .all()
+            .filter(UserWord.user_id == user_id)
         )
-        logger.info(f"Found {len(words)} unlearned words for user {user_id}")
-        return words
+
+        if learned is not None:
+            query = query.filter(UserWord.is_learned == learned)
+        if priority is not None:
+            query = query.filter(UserWord.priority == priority)
+        if limit is not None:
+            query = query.limit(limit)
+
+        return query.all()
     
+    def get_non_user_words(self, user_id: int, limit: Optional[int] = None) -> List[str]:
+        """Get all words that are not in the user's dictionary."""
+        # Create a subquery to get word_ids that are in user's dictionary
+        user_word_ids = (
+            self.db.query(UserWord.word_id)
+            .filter(UserWord.user_id == user_id)
+            .subquery()
+        )
+        
+        # Get all words that are not in the subquery
+        query = (
+            self.db.query(Word)
+            .filter(~Word.id.in_(user_word_ids))
+        )
+        if limit is not None: query = query.limit(limit)
+        return [word.text for word in query.all()]
+
     def get_user_word_count(self, user_id: int, learned: Optional[bool] = None) -> int:
         """Get the count of unlearned words for a user."""
         query = self.db.query(UserWord).filter(UserWord.user_id == user_id)
@@ -54,11 +78,7 @@ class UserService:
         target_language: str = "en",
     ) -> User:
         """Get existing user or create a new one."""
-        user = (
-            self.db.query(User)
-            .filter(User.telegram_id == telegram_id)
-            .first()
-        )
+        user = self.get_user_by_telegram_id(telegram_id)
         
         if not user:
             user = User(
@@ -229,9 +249,20 @@ class UserService:
                     next_review=None,
                     review_stage=0,
                 )
-
-            self.db.add(user_word)
             added_words.append(user_word)
+
+        # Check if user has words with the same priority and if so, decrease the priority by 1
+        # Only not below default priority
+        # Only for lower priorities
+        all_user_words = self.get_user_words(user_id)
+        for word in all_user_words:
+            if priority > word.priority > settings.learning.default_priority:
+                word.priority -= 1
+                self.db.add(word)
+
+        # Add all new words to the user's dictionary
+        for word in added_words:
+            self.db.add(word)
 
         self.db.commit()
         self.log_user_activity(

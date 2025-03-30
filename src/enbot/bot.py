@@ -67,6 +67,10 @@ ERR_KB_NOT_REGISTERED = [[InlineKeyboardButton(msg_back_to(MENU), callback_data=
 KB_BTNS_BACK_TO_MENU_SETTINGS = [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
                                  InlineKeyboardButton(msg_back_to(SETTINGS), callback_data="settings")]
 
+def make_user_id(user_id: int) -> int:
+    """Make user id."""
+    return user_id# + 1 # TODO: Only for testing
+
 
 async def start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and show main menu."""
@@ -75,9 +79,9 @@ async def start(update: Update, context: CallbackContext) -> int:
     
     try:
         user_service = UserService(db)
-        user_service.get_or_create_user(
-            telegram_id=user.id,
-            username=user.username,
+        user = user_service.get_or_create_user(
+            telegram_id=make_user_id(user.id),
+            username=user.first_name,
         )
         
         keyboard = [
@@ -88,21 +92,15 @@ async def start(update: Update, context: CallbackContext) -> int:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        message = (f"Welcome to EnBot, {user.username}! 👋\n\n"
+                    "I'll help you learn English vocabulary effectively.\n"
+                    "What would you like to do?")
+
         # Handle both initial command and callback queries
         if update.callback_query:
-            await update.callback_query.edit_message_text(
-                f"Welcome to EnBot, {user.first_name}! 👋\n\n"
-                "I'll help you learn English vocabulary effectively.\n"
-                "What would you like to do?",
-                reply_markup=reply_markup,
-            )
+            await update.callback_query.edit_message_text(message, reply_markup=reply_markup)
         else:
-            await update.message.reply_text(
-                f"Welcome to EnBot, {user.first_name}! 👋\n\n"
-                "I'll help you learn English vocabulary effectively.\n"
-                "What would you like to do?",
-                reply_markup=reply_markup,
-            )
+            await update.message.reply_text(message, reply_markup=reply_markup)
         
         return MAIN_MENU
         
@@ -119,7 +117,7 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
 
     if query.data == "start_learning":
         return await start_learning(update, context)
-    elif query.data == "add_words":
+    elif query.data.startswith("add_words"):
         return await add_words(update, context)
     elif query.data == "statistics":
         return await show_statistics(update, context)
@@ -221,13 +219,11 @@ async def add_words(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     
     await query.edit_message_text(
-        "Please enter words to add, one per line.\n"
-        "For example:\n"
-        "hello\n"
-        "world\n"
-        "python",
+        "📝 Please enter words to add (one per line)\n",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
+            [InlineKeyboardButton("Add all words from database (high priority)", callback_data="add_all_words_from_db_high")],
+            [InlineKeyboardButton("Add all words from database (low priority)", callback_data="add_all_words_from_db_low")],
+            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
         ]),
     )
     
@@ -241,37 +237,52 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
         await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
+    if update.callback_query is not None:
+        logger.info("DATA handle_add_words(): %s", update.callback_query.data)
+    elif update.message is not None:
+        logger.info("DATA handle_add_words(): %s", update.message.text)
+
     db = SessionLocal()
     try:
         user_service = UserService(db)
         
-        # Split text by multiple separators (newline and semicolon)
-        text = update.message.text
         words = []
-        for line in text.split('\n'):
-            # Split each line by semicolon and add non-empty words
-            words.extend(word.strip() for word in line.split(';') if word.strip())
-        
-        if not words:
-            await update.message.reply_text(
-                "No valid words provided. Please try again.\n"
-                "You can separate words by new lines or semicolons.\n"
-                "Example:\n"
-                "hello; world\n"
-                "python; java",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
-                ]),
-            )
-            return ADD_WORDS
-        
-        added_words = user_service.add_words(user.id, words)
+        priority = settings.learning.max_priority
+
+        if update.callback_query is not None and update.callback_query.data.startswith("add_all_words_from_db"):
+            # Pressed button
+            if update.callback_query.data == "add_all_words_from_db_low":
+                priority = settings.learning.min_priority
+
+            words.extend(user_service.get_non_user_words(user.id, 1000))
+
+        if update.message is not None:
+            # Split text by newline
+            text = update.message.text
+            words.extend(word.strip() for word in text.split('\n') if word.strip())
+            
+            if not words:
+                await update.message.reply_text(
+                    "No valid words provided. Please try again.\n"
+                    "You can separate words by new lines.\n"
+                    "Example:\n"
+                    "hello\n"
+                    "world\n"
+                    "python",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
+                    ]),
+                )
+                return ADD_WORDS
+
+        if words:
+            added_words = user_service.add_words(user.id, words, priority)
         
         await update.message.reply_text(
             f"Successfully added {len(added_words)} word(s)!\n"
             "Would you like to add more words?",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Add More", callback_data="add_words")],
+                [InlineKeyboardButton("📝 Add More", callback_data="add_words")],
                 [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
             ]),
         )
@@ -406,7 +417,7 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
             db.query(UserWord)
             .filter(
                 and_(
-                    UserWord.user_id == user.id,
+                    UserWord.user.id == user.id,
                     UserWord.word_id == word_id,
                 )
             )
@@ -499,7 +510,7 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
     db = SessionLocal()
     try:
         current_word_goal = user.daily_goal_words if hasattr(user, 'daily_goal_words') else 10
-        current_time_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else 15
+        current_time_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else 10
 
         logger.debug(f"User {user.id} current goals - words: {current_word_goal}, time: {current_time_goal}")
 
@@ -743,7 +754,7 @@ def get_user_from_update(update: Update) -> Optional[User]:
     db = SessionLocal()
     try:
         user_service = UserService(db)
-        return user_service.get_user_by_telegram_id(user.id)
+        return user_service.get_user_by_telegram_id(make_user_id(user.id))
     finally:
         db.close()
 

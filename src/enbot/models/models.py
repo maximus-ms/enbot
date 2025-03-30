@@ -149,4 +149,4 @@ class UserLog(Base, TimestampMixin):
     category = Column(String, nullable=False)  # e.g., "learning", "settings"
 
     # Relationships
-    user = relationship("User", back_populates="logs") 
+    user = relationship("User", back_populates="logs")
