@@ -1,6 +1,7 @@
 """User service for managing user data and preferences."""
 from datetime import datetime, timedelta, UTC
 from typing import List, Optional
+import logging
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -9,6 +10,8 @@ from enbot.config import settings
 from enbot.models.models import User, UserLog, UserWord, Word, LearningCycle
 from enbot.services.content_generator import ContentGenerator
 
+# Configure logging
+logger = logging.getLogger(__name__)
 
 class UserService:
     """Service for managing user data and preferences."""
@@ -17,6 +20,25 @@ class UserService:
         """Initialize the service with a database session."""
         self.db = db
         self.content_generator = ContentGenerator()
+
+    def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+        """Get user by telegram ID."""
+        return self.db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    def get_user_words(self, user_id: int) -> List[UserWord]:
+        """Get all unlearned words for a user."""
+        words = (
+            self.db.query(UserWord)
+            .filter(
+                and_(
+                    UserWord.user_id == user_id,
+                    UserWord.is_learned == False
+                )
+            )
+            .all()
+        )
+        logger.info(f"Found {len(words)} unlearned words for user {user_id}")
+        return words
 
     def get_or_create_user(
         self,

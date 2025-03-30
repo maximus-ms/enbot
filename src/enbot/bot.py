@@ -23,9 +23,10 @@ from telegram.ext import (
 
 from enbot.config import settings
 from enbot.models.base import SessionLocal
-from enbot.models.models import User
+from enbot.models.models import User, UserWord, CycleWord
 from enbot.services.learning_service import LearningService
 from enbot.services.user_service import UserService
+from sqlalchemy import and_
 
 # Configure logging
 logging.basicConfig(
@@ -116,6 +117,10 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await start(update, context)
     elif query.data.startswith("language_"):
         return await handle_language_selection(update, context)
+    elif query.data.startswith("know_"):
+        return await handle_word_response(update, context, True)
+    elif query.data.startswith("dont_know_"):
+        return await handle_word_response(update, context, False)
     
     return MAIN_MENU
 
@@ -124,20 +129,30 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     """Start a new learning cycle."""
     user = get_user_from_update(update)
     if not user:
-        await update.message.reply_text("Please /start first to register.")
-        return
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
 
     db = SessionLocal()
     try:
         learning_service = LearningService(db)
+        user_service = UserService(db)
 
-        # Check if there's an active cycle
-        cycle = learning_service.get_active_cycle(user.id)
-        if cycle:
-            await update.message.reply_text(
-                "You already have an active learning cycle. Complete it first!"
+        # Check if user has any words
+        user_words = user_service.get_user_words(user.id)
+        if not user_words:
+            await update.callback_query.edit_message_text(
+                "No words available for learning. Add some words first!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Add Words", callback_data="add_words")],
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                ]),
             )
-            return
+            return MAIN_MENU
 
         # Create a new cycle
         cycle = learning_service.create_new_cycle(user.id)
@@ -145,10 +160,14 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Get words for learning
         words = learning_service.get_words_for_cycle(user.id, settings.learning.words_per_cycle)
         if not words:
-            await update.message.reply_text(
-                "No words available for learning. Add some words first!"
+            await update.callback_query.edit_message_text(
+                "No words available for learning. Add some words first!",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Add Words", callback_data="add_words")],
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                ]),
             )
-            return
+            return MAIN_MENU
 
         # Add words to cycle
         cycle_words = learning_service.add_words_to_cycle(cycle.id, words)
@@ -158,8 +177,8 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Show the first word
         keyboard = [
             [
-                InlineKeyboardButton("I know this", callback_data=f"know_{word.id}"),
-                InlineKeyboardButton("Don't know", callback_data=f"dont_know_{word.id}"),
+                InlineKeyboardButton("✅ I know this", callback_data=f"know_{word.id}"),
+                InlineKeyboardButton("❌ Don't know", callback_data=f"dont_know_{word.id}"),
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -171,7 +190,7 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if example:
             message += f"\nExample: {example.sentence}"
 
-        await update.message.reply_text(
+        await update.callback_query.edit_message_text(
             message,
             reply_markup=reply_markup,
         )
@@ -209,11 +228,21 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
     db = SessionLocal()
     try:
         user_service = UserService(db)
-        words = [word.strip() for word in update.message.text.split("\n") if word.strip()]
+        
+        # Split text by multiple separators (newline and semicolon)
+        text = update.message.text
+        words = []
+        for line in text.split('\n'):
+            # Split each line by semicolon and add non-empty words
+            words.extend(word.strip() for word in line.split(';') if word.strip())
         
         if not words:
             await update.message.reply_text(
-                "No valid words provided. Please try again.",
+                "No valid words provided. Please try again.\n"
+                "You can separate words by new lines or semicolons.\n"
+                "Example:\n"
+                "hello; world\n"
+                "python; java",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
                 ]),
@@ -223,7 +252,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
         added_words = user_service.add_words(user.id, words)
         
         await update.message.reply_text(
-            f"Successfully added {len(added_words)} words!\n"
+            f"Successfully added {len(added_words)} word(s)!\n"
             "Would you like to add more words?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Add More", callback_data="add_words")],
@@ -327,6 +356,122 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
         
         return MAIN_MENU
         
+    finally:
+        db.close()
+
+
+async def handle_word_response(update: Update, context: CallbackContext, is_known: bool) -> int:
+    """Handle user's response to a word (know/don't know)."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        learning_service = LearningService(db)
+        word_id = int(update.callback_query.data.split("_")[1])
+        
+        # Get the current cycle
+        cycle = learning_service.get_active_cycle(user.id)
+        if not cycle:
+            await update.callback_query.edit_message_text(
+                "No active learning cycle found. Please start learning again.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                ]),
+            )
+            return MAIN_MENU
+
+        # Get the user_word_id for this word
+        user_word = (
+            db.query(UserWord)
+            .filter(
+                and_(
+                    UserWord.user_id == user.id,
+                    UserWord.word_id == word_id,
+                )
+            )
+            .first()
+        )
+        if not user_word:
+            await update.callback_query.edit_message_text(
+                "Error: Word not found in your vocabulary.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                ]),
+            )
+            return MAIN_MENU
+
+        # Check if the word is in the current cycle
+        cycle_word = (
+            db.query(CycleWord)
+            .filter(
+                and_(
+                    CycleWord.cycle_id == cycle.id,
+                    CycleWord.user_word_id == user_word.id,
+                )
+            )
+            .first()
+        )
+        if not cycle_word:
+            await update.callback_query.edit_message_text(
+                "Error: Word not found in current learning cycle.",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                ]),
+            )
+            return MAIN_MENU
+
+        # Mark the word as learned if user knows it
+        if is_known:
+            learning_service.mark_word_as_learned(cycle.id, user_word.id, 0.0)  # Time spent is 0 for now
+
+        # Get the next word
+        words = learning_service.get_words_for_cycle(user.id, settings.learning.words_per_cycle)
+        if not words:
+            # No more words, complete the cycle
+            learning_service.complete_cycle(cycle.id)
+            await update.callback_query.edit_message_text(
+                "🎉 Congratulations! You've completed this learning cycle!\n"
+                "Would you like to start another one?",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Start New Cycle", callback_data="start_learning")],
+                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                ]),
+            )
+            return MAIN_MENU
+
+        # Show the next word
+        word = words[0].word
+        example = word.examples[0] if word.examples else None
+
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ I know this", callback_data=f"know_{word.id}"),
+                InlineKeyboardButton("❌ Don't know", callback_data=f"dont_know_{word.id}"),
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        message = f"Let's continue learning!\n\n" \
+                 f"Word: {word.text}\n" \
+                 f"Translation: {word.translation}"
+        
+        if example:
+            message += f"\nExample: {example.sentence}"
+
+        await update.callback_query.edit_message_text(
+            message,
+            reply_markup=reply_markup,
+        )
+        
+        return LEARNING
     finally:
         db.close()
 

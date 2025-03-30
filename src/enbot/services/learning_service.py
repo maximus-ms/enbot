@@ -57,44 +57,25 @@ class LearningService:
         if not user:
             raise ValueError(f"User {user_id} not found")
 
-        # Get words due for repetition (priority 11)
-        repetition_words = (
+        # Get the active cycle
+        cycle = self.get_active_cycle(user_id)
+        if not cycle:
+            raise ValueError("No active cycle found")
+
+        # Get words that are in the current cycle and not yet learned
+        cycle_words = (
             self.db.query(UserWord)
+            .join(CycleWord, UserWord.id == CycleWord.user_word_id)
             .filter(
                 and_(
-                    UserWord.user_id == user_id,
-                    UserWord.next_review <= datetime.now(UTC),
+                    CycleWord.cycle_id == cycle.id,
+                    CycleWord.is_learned == False,
                 )
             )
             .all()
         )
 
-        # Get words from current priority sets
-        priority_words = (
-            self.db.query(UserWord)
-            .filter(
-                and_(
-                    UserWord.user_id == user_id,
-                    UserWord.priority > 0,
-                    UserWord.is_learned == False,
-                )
-            )
-            .all()
-        )
-
-        # Calculate how many words to take from each set
-        max_repetition_words = int(cycle_size * settings.learning.repetition_history_percentage)
-        repetition_count = min(len(repetition_words), max_repetition_words)
-        priority_count = min(len(priority_words), cycle_size - repetition_count)
-
-        # Randomly select words from each set
-        selected_words = []
-        if repetition_words and repetition_count > 0:
-            selected_words.extend(random.sample(repetition_words, repetition_count))
-        if priority_words and priority_count > 0:
-            selected_words.extend(random.sample(priority_words, priority_count))
-
-        return selected_words
+        return cycle_words
 
     def add_words_to_cycle(
         self, cycle_id: int, user_words: List[UserWord]
