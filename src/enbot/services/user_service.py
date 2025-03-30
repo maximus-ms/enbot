@@ -87,24 +87,30 @@ class UserService:
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user:
             raise ValueError(f"User {user_id} not found")
-
+        log_message = f"User settings updated: ["
         if native_language is not None:
             user.native_language = native_language
+            log_message += f" native_language: {native_language},"
         if target_language is not None:
             user.target_language = target_language
+            log_message += f" target_language: {target_language},"
         if daily_goal_minutes is not None:
             user.daily_goal_minutes = daily_goal_minutes
+            log_message += f" daily_goal_minutes: {daily_goal_minutes},"
         if daily_goal_words is not None:
             user.daily_goal_words = daily_goal_words
+            log_message += f" daily_goal_words: {daily_goal_words},"
         if day_start_hour is not None:
             user.day_start_hour = day_start_hour
+            log_message += f" day_start_hour: {day_start_hour}"
+        log_message += "]"
 
         self.db.commit()
         self.db.refresh(user)
         
         self.log_user_activity(
             user.id,
-            "User settings updated",
+            log_message,
             "INFO",
             "settings_updated",
         )
@@ -260,6 +266,7 @@ class UserService:
         category: str,
     ) -> None:
         """Log user activity."""
+        logger.log(logging.getLevelName(level), f"Logging user activity: {message}")
         log = UserLog(
             user_id=user_id,
             message=message,

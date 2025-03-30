@@ -105,8 +105,6 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     """Handle callback queries from inline keyboard."""
     query = update.callback_query
     await query.answer()
-    
-    print("MAXXXX BOT: ", query.data)
 
     if query.data == "start_learning":
         return await start_learning(update, context)
@@ -489,6 +487,7 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
     """Handle daily goals settings."""
     user = get_user_from_update(update)
     if not user:
+        logger.warning(f"User not found for update: {update.effective_user.id}")
         await update.callback_query.edit_message_text(
             "Please /start first to register.",
             reply_markup=InlineKeyboardMarkup([
@@ -499,9 +498,10 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
 
     db = SessionLocal()
     try:
-        user_service = UserService(db)
         current_word_goal = user.daily_goal_words if hasattr(user, 'daily_goal_words') else 10
         current_time_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else 15
+
+        logger.debug(f"User {user.id} current goals - words: {current_word_goal}, time: {current_time_goal}")
 
         keyboard = [
             [InlineKeyboardButton("📚 Word Count Goals", callback_data="daily_goals_words")],
@@ -519,6 +519,7 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         
+        logger.info(f"User {user.id} opened daily goals menu")
         return SETTINGS
     finally:
         db.close()
@@ -528,6 +529,7 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
     """Handle word count goals settings."""
     user = get_user_from_update(update)
     if not user:
+        logger.warning(f"User not found for update: {update.effective_user.id}")
         await update.callback_query.edit_message_text(
             "Please /start first to register.",
             reply_markup=InlineKeyboardMarkup([
@@ -539,6 +541,7 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
     db = SessionLocal()
     try:
         current_goal = user.daily_goal_words if hasattr(user, 'daily_goal_words') else None
+        logger.debug(f"User {user.id} current word goal: {current_goal}")
 
         keyboard = [
             [InlineKeyboardButton(f"{i} words", callback_data=f"set_goal_words_{i}") 
@@ -557,6 +560,7 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         
+        logger.info(f"User {user.id} opened word goals menu")
         return SETTINGS
     finally:
         db.close()
@@ -566,6 +570,7 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
     """Handle time goals settings."""
     user = get_user_from_update(update)
     if not user:
+        logger.warning(f"User not found for update: {update.effective_user.id}")
         await update.callback_query.edit_message_text(
             "Please /start first to register.",
             reply_markup=InlineKeyboardMarkup([
@@ -577,6 +582,7 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
     db = SessionLocal()
     try:
         current_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else None
+        logger.debug(f"User {user.id} current time goal: {current_goal}")
 
         keyboard = [
             [InlineKeyboardButton(f"{i} minutes", callback_data=f"set_goal_time_{i}") 
@@ -595,6 +601,7 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         
+        logger.info(f"User {user.id} opened time goals menu")
         return SETTINGS
     finally:
         db.close()
@@ -604,6 +611,7 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
     """Handle setting a new daily goal."""
     user = get_user_from_update(update)
     if not user:
+        logger.warning(f"User not found for update: {update.effective_user.id}")
         await update.callback_query.edit_message_text(
             "Please /start first to register.",
             reply_markup=InlineKeyboardMarkup([
@@ -618,12 +626,16 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
         _, _, goal_type, new_goal = update.callback_query.data.split("_")
         new_goal = int(new_goal)
         
+        logger.debug(f"User {user.id} setting new {goal_type} goal to {new_goal}")
+        
         if goal_type == "words":
             user_service.update_user_settings(user.id, daily_goal_words=new_goal)
             message = f"✅ Daily word goal updated to {new_goal} words!"
+            logger.info(f"User {user.id} updated word goal to {new_goal}")
         else:  # time
             user_service.update_user_settings(user.id, daily_goal_minutes=new_goal)
             message = f"✅ Daily time goal updated to {new_goal} minutes!"
+            logger.info(f"User {user.id} updated time goal to {new_goal}")
 
         await update.callback_query.edit_message_text(
             message,
@@ -634,6 +646,16 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
             ]),
         )
         
+        return SETTINGS
+    except ValueError as e:
+        logger.error(f"Error setting goal for user {user.id}: {str(e)}")
+        await update.callback_query.edit_message_text(
+            "Error updating goal. Please try again.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            ]),
+        )
         return SETTINGS
     finally:
         db.close()

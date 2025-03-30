@@ -63,7 +63,7 @@ class LoggingSettings:
     """Logging configuration settings."""
     level: str = os.getenv("LOG_LEVEL", "INFO")
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    file: Optional[str] = os.getenv("LOG_FILE")
+    dir: Optional[str] = os.getenv("LOG_DIR", None)
 
 
 def get_admin_ids() -> list[int]:
