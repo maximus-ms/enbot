@@ -50,10 +50,11 @@ START_LEARNING = "Start Learning"
 ADD_NEW_WORDS = "Add New Words"
 VIEW_STATISTICS = "View Statistics"
 SETTINGS = "Settings"
+BACK_TO_GOALS = "Back to Goals"
+BACK_TO_SETTINGS = "Back to Settings"
 BACK_TO_MENU = "Back to Menu"
-
 # Settings options
-CHANGE_LANGUAGE = "Change Language"
+# CHANGE_LANGUAGE = "Change Language"
 DAILY_GOALS = "Daily Goals"
 NOTIFICATIONS = "Notifications"
 
@@ -105,6 +106,8 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
     
+    print("MAXXXX BOT: ", query.data)
+
     if query.data == "start_learning":
         return await start_learning(update, context)
     elif query.data == "add_words":
@@ -115,8 +118,14 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await show_settings(update, context)
     elif query.data == "back_to_menu":
         return await start(update, context)
-    elif query.data.startswith("language_"):
-        return await handle_language_selection(update, context)
+    elif query.data == "daily_goals":
+        return await handle_daily_goals(update, context)
+    elif query.data == "daily_goals_words":
+        return await handle_daily_goals_words(update, context)
+    elif query.data == "daily_goals_time":
+        return await handle_daily_goals_time(update, context)
+    elif query.data.startswith("set_goal_"):
+        return await handle_set_goal(update, context)
     elif query.data.startswith("know_"):
         return await handle_word_response(update, context, True)
     elif query.data.startswith("dont_know_"):
@@ -310,7 +319,7 @@ async def show_settings(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     
     keyboard = [
-        [InlineKeyboardButton(CHANGE_LANGUAGE, callback_data="change_language")],
+        # [InlineKeyboardButton(CHANGE_LANGUAGE, callback_data="change_language")],
         [InlineKeyboardButton(DAILY_GOALS, callback_data="daily_goals")],
         [InlineKeyboardButton(NOTIFICATIONS, callback_data="notifications")],
         [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
@@ -472,6 +481,160 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
         )
         
         return LEARNING
+    finally:
+        db.close()
+
+
+async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
+    """Handle daily goals settings."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        user_service = UserService(db)
+        current_word_goal = user.daily_goal_words if hasattr(user, 'daily_goal_words') else 10
+        current_time_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else 15
+
+        keyboard = [
+            [InlineKeyboardButton("📚 Word Count Goals", callback_data="daily_goals_words")],
+            [InlineKeyboardButton("⏱ Time Goals", callback_data="daily_goals_time")],
+            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
+            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+        ]
+
+        await update.callback_query.edit_message_text(
+            f"🎯 Daily Learning Goals\n\n"
+            f"Current goals:\n"
+            f"• Words per day: {current_word_goal}\n"
+            f"• Minutes per day: {current_time_goal}\n\n"
+            "Choose what to modify:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        
+        return SETTINGS
+    finally:
+        db.close()
+
+
+async def handle_daily_goals_words(update: Update, context: CallbackContext) -> int:
+    """Handle word count goals settings."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            ]),
+        )
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        current_goal = user.daily_goal_words if hasattr(user, 'daily_goal_words') else None
+
+        keyboard = [
+            [InlineKeyboardButton(f"{i} words", callback_data=f"set_goal_words_{i}") 
+             for i in [5, 10, 15]],
+            [InlineKeyboardButton(f"{i} words", callback_data=f"set_goal_words_{i}") 
+             for i in [20, 25, 30]],
+            [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
+            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
+            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+        ]
+
+        await update.callback_query.edit_message_text(
+            f"📚 Word Count Goals\n\n"
+            f"Current goal: {current_goal} words per day\n\n"
+            "Choose your new daily word goal:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        
+        return SETTINGS
+    finally:
+        db.close()
+
+
+async def handle_daily_goals_time(update: Update, context: CallbackContext) -> int:
+    """Handle time goals settings."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            ]),
+        )
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        current_goal = user.daily_goal_minutes if hasattr(user, 'daily_goal_minutes') else None
+
+        keyboard = [
+            [InlineKeyboardButton(f"{i} minutes", callback_data=f"set_goal_time_{i}") 
+             for i in [5, 10, 15]],
+            [InlineKeyboardButton(f"{i} minutes", callback_data=f"set_goal_time_{i}") 
+             for i in [20, 30, 45]],
+            [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
+            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
+            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+        ]
+
+        await update.callback_query.edit_message_text(
+            f"⏱ Time Goals\n\n"
+            f"Current goal: {current_goal} minutes per day\n\n"
+            "Choose your new daily time goal:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        
+        return SETTINGS
+    finally:
+        db.close()
+
+
+async def handle_set_goal(update: Update, context: CallbackContext) -> int:
+    """Handle setting a new daily goal."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(
+            "Please /start first to register.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            ]),
+        )
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        user_service = UserService(db)
+        _, _, goal_type, new_goal = update.callback_query.data.split("_")
+        new_goal = int(new_goal)
+        
+        if goal_type == "words":
+            user_service.update_user_settings(user.id, daily_goal_words=new_goal)
+            message = f"✅ Daily word goal updated to {new_goal} words!"
+        else:  # time
+            user_service.update_user_settings(user.id, daily_goal_minutes=new_goal)
+            message = f"✅ Daily time goal updated to {new_goal} minutes!"
+
+        await update.callback_query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
+                [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
+                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            ]),
+        )
+        
+        return SETTINGS
     finally:
         db.close()
 
