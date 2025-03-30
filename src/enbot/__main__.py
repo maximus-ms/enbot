@@ -9,7 +9,7 @@ from typing import Optional
 
 
 # Configure logging
-def setup_logging(level: Optional[int] = None, dir: Optional[str] = None) -> None:
+def setup_logging(level: Optional[int] = None) -> None:
     """Configure logging for the entire application.
     
     Args:
@@ -18,8 +18,8 @@ def setup_logging(level: Optional[int] = None, dir: Optional[str] = None) -> Non
     """
     # Set default level if not provided
     if level is None:
-        level = logging.INFO
-    elif isinstance(level, str):
+        level = settings.logging.level
+    if isinstance(level, str):
         level = logging.getLevelName(level)
 
     # Create a formatter
@@ -40,8 +40,15 @@ def setup_logging(level: Optional[int] = None, dir: Optional[str] = None) -> Non
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
+    root_logger.info(f"Logging configured with level: {logging.getLevelName(level)}")
+
     # Add file handler with rotation
+    dir = settings.logging.dir
     if dir is not None:
+        rotation = settings.logging.rotation
+        interval = settings.logging.interval
+        backup_count = settings.logging.backup_count
+    
         try:
             from pathlib import Path
             from logging.handlers import TimedRotatingFileHandler
@@ -54,17 +61,16 @@ def setup_logging(level: Optional[int] = None, dir: Optional[str] = None) -> Non
             log_file = log_dir / "enbot.log"
             file_handler = TimedRotatingFileHandler(
                 log_file,
-                when='midnight',  # Rotate at midnight
-                interval=1,       # Every day
-                backupCount=30,   # Keep 30 days of logs
+                when=rotation,
+                interval=interval,
+                backupCount=backup_count,
                 encoding='utf-8'
             )
             file_handler.setFormatter(formatter)
             root_logger.addHandler(file_handler)
             
             # Log the configuration
-            root_logger.info(f"Logging configured with level: {logging.getLevelName(level)}")
-            root_logger.info(f"Log file: {log_file}")
+            root_logger.info(f"Log file: {log_file} (rotation: {rotation}, interval: {interval}, backup_count: {backup_count})")
         except Exception as e:
             print(f"Warning: Could not set up file logging: {e}")
 
@@ -127,7 +133,7 @@ async def main() -> None:
         await bot.stop()
 
 if __name__ == "__main__":
-    setup_logging(settings.logging.level, settings.logging.dir)
+    setup_logging()
 
     try:
         # Create and set event loop

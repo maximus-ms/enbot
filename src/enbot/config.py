@@ -64,6 +64,9 @@ class LoggingSettings:
     level: str = os.getenv("LOG_LEVEL", "INFO")
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     dir: Optional[str] = os.getenv("LOG_DIR", None)
+    rotation: str = os.getenv("LOG_FILE_ROTATION", "midnight")
+    interval: int = int(os.getenv("LOG_FILE_ROTATION_INTERVAL", "1"))
+    backup_count: int = int(os.getenv("LOG_FILE_ROTATION_BACKUP_COUNT", "30"))
 
 
 def get_admin_ids() -> list[int]:
