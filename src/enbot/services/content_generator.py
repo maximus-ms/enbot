@@ -20,14 +20,16 @@ class ContentGenerator:
         """Generate a translation for a word."""
         # In a real implementation, this would use a translation API
         # For now, we'll just return a fake translation
-        return fake.word() if len(word.split()) == 1 else fake.sentence()
+        # return fake.word() if len(word.split()) == 1 else fake.sentence()
+        return word
 
     @staticmethod
     def generate_transcription(word: str, target_lang: str) -> str:
         """Generate a transcription for a word."""
         # In a real implementation, this would use a transcription API
         # For now, we'll just return a fake transcription
-        return fake.word()
+        # return fake.word()
+        return word
 
     @staticmethod
     def generate_pronunciation(word: str, target_lang: str) -> str:

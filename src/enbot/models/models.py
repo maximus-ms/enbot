@@ -43,7 +43,7 @@ class User(Base, TimestampMixin):
     notification_hour = Column(Integer, default=0)
     last_notification_time = Column(DateTime(timezone=True), nullable=True)
     notifications_enabled = Column(Boolean, default=True)
-
+    word_add_last_date = Column(DateTime(timezone=True), nullable=True)
     # Relationships
     words = relationship("UserWord", back_populates="user")
     learning_cycles = relationship("LearningCycle", back_populates="user")

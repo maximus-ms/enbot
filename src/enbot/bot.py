@@ -250,9 +250,7 @@ async def handle_add_all_words_from_db(update: Update, context: CallbackContext)
         if update.callback_query.data == "add_all_words_from_db_low":
             priority = settings.learning.min_priority
 
-        logger.info("Non user words before")
         words = user_service.get_non_user_words(user.id, 1000)
-        logger.info("Non user words: %s", words)
 
         added_words = user_service.add_words(user.id, words, priority)
         added_words_count = len(added_words)

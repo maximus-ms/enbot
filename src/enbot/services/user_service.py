@@ -122,6 +122,7 @@ class UserService:
         day_start_hour: Optional[int] = None,
         notification_hour: Optional[int] = None,
         notifications_enabled: Optional[bool] = None,
+        word_add_last_date: Optional[datetime] = None,
     ) -> User:
         """Update user settings."""
         user = self.db.query(User).filter(User.id == user_id).first()
@@ -149,6 +150,9 @@ class UserService:
         if notifications_enabled is not None:
             user.notifications_enabled = notifications_enabled
             log_message += f" notifications_enabled: {notifications_enabled}"
+        if word_add_last_date is not None:
+            user.word_add_last_date = word_add_last_date
+            log_message += f" word_add_last_date: {word_add_last_date}"
         log_message += "]"
 
         self.db.commit()
@@ -173,6 +177,26 @@ class UserService:
         if len(words) == 0: return []
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user: raise ValueError(f"User {user_id} not found")
+
+        # Check if user did not added words today, check if user has words with the same priority and if so, decrease the priority by 1
+        if user.word_add_last_date is None or user.word_add_last_date.date() != datetime.now(UTC).date():
+            all_user_words = self.get_user_words(user_id)
+            # get list of all priorities
+            priorities = sorted(set([word.priority for word in all_user_words]), reverse=True)
+
+            # check if we need to decrease priority
+            if priorities and priority == priorities[0]:
+                # All conflictiong priorities must be decreased
+                priorities_to_decrease = [priorities[0]]
+                for _priority in priorities[1:]:
+                    if _priority <= settings.learning.default_priority: break
+                    if _priority+1 != priorities_to_decrease[-1]: break
+                    priorities_to_decrease.append(_priority)
+
+                for word in all_user_words:
+                    if word.priority in priorities_to_decrease:
+                        word.priority -= 1
+                        self.db.add(word)
 
         added_words = []
         for word_text in words:
@@ -211,7 +235,8 @@ class UserService:
                             "INFO",
                             "word_priority_updated",
                         )
-                        added_words.append(existing_user_word)
+                        if priority > existing_user_word.priority+1:
+                            added_words.append(existing_user_word)
                     continue
 
                 user_word = UserWord(
@@ -250,19 +275,11 @@ class UserService:
                     review_stage=0,
                 )
             added_words.append(user_word)
+            self.db.add(user_word)
 
-        # Check if user has words with the same priority and if so, decrease the priority by 1
-        # Only not below default priority
-        # Only for lower priorities
-        all_user_words = self.get_user_words(user_id)
-        for word in all_user_words:
-            if priority > word.priority > settings.learning.default_priority:
-                word.priority -= 1
-                self.db.add(word)
-
-        # Add all new words to the user's dictionary
-        for word in added_words:
-            self.db.add(word)
+        if len(added_words) > 0:
+            user.word_add_last_date = datetime.now(UTC)
+            self.db.add(user)
 
         self.db.commit()
         self.log_user_activity(
