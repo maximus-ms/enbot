@@ -101,7 +101,7 @@ class LearningSettings:
     default_priority: int = int(os.getenv("DEFAULT_PRIORITY", "3"))
     repetition_intervals: list[int] = field(default_factory=lambda: REPETITION_INTERVALS)
     repetition_history_percentage: float = REPETITION_HISTORY_PERCENTAGE
-
+    day_start_hour: int = int(os.getenv("DEFAULT_DAY_START_HOUR", "0"))
 
 @dataclass
 class NotificationSettings:
@@ -110,6 +110,7 @@ class NotificationSettings:
     review_reminder_interval: int = int(os.getenv("REVIEW_REMINDER_INTERVAL", "24"))
     achievement_check_interval: int = int(os.getenv("ACHIEVEMENT_CHECK_INTERVAL", "24"))
     streak_check_interval: int = int(os.getenv("STREAK_CHECK_INTERVAL", "24"))
+    enabled: bool = os.getenv("NOTIFICATIONS_ENABLED", "true").lower() == "true"
 
 
 def get_path_settings() -> PathSettings:

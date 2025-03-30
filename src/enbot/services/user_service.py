@@ -60,6 +60,10 @@ class UserService:
                 username=username,
                 native_language=native_language,
                 target_language=target_language,
+                day_start_hour=settings.learning.day_start_hour,
+                notification_hour=self._time_to_hour(settings.notification.daily_reminder_time),
+                is_admin=telegram_id in settings.bot.admin_ids,
+                notifications_enabled=settings.notification.enabled,
             )
             self.db.add(user)
             self.db.commit()
@@ -74,6 +78,14 @@ class UserService:
         
         return user
 
+    def _time_to_hour(self, time_str: str) -> int:
+        """Convert time string (HH:MM) to hour integer"""
+        try:
+            time_obj = datetime.strptime(time_str, "%H:%M")
+            return time_obj.hour
+        except ValueError as e:
+            raise ValueError(f"Invalid time format. Expected HH:MM, got {time_str}") from e
+
     def update_user_settings(
         self,
         user_id: int,
@@ -82,6 +94,8 @@ class UserService:
         daily_goal_minutes: Optional[int] = None,
         daily_goal_words: Optional[int] = None,
         day_start_hour: Optional[int] = None,
+        notification_hour: Optional[int] = None,
+        notifications_enabled: Optional[bool] = None,
     ) -> User:
         """Update user settings."""
         user = self.db.query(User).filter(User.id == user_id).first()
@@ -103,6 +117,12 @@ class UserService:
         if day_start_hour is not None:
             user.day_start_hour = day_start_hour
             log_message += f" day_start_hour: {day_start_hour}"
+        if notification_hour is not None:
+            user.notification_hour = notification_hour
+            log_message += f" notification_hour: {notification_hour}"
+        if notifications_enabled is not None:
+            user.notifications_enabled = notifications_enabled
+            log_message += f" notifications_enabled: {notifications_enabled}"
         log_message += "]"
 
         self.db.commit()

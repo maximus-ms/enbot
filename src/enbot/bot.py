@@ -46,17 +46,25 @@ logger = logging.getLogger(__name__)
 ) = range(6)
 
 # Button texts
-START_LEARNING = "Start Learning"
-ADD_NEW_WORDS = "Add New Words"
-VIEW_STATISTICS = "View Statistics"
-SETTINGS = "Settings"
-BACK_TO_GOALS = "Back to Goals"
-BACK_TO_SETTINGS = "Back to Settings"
-BACK_TO_MENU = "Back to Menu"
+MENU = "🏠 Menu"
+START_LEARNING = "💡 Start Learning"
+ADD_NEW_WORDS = "📝 Add New Words"
+VIEW_STATISTICS = "📊 View Statistics"
+
+SETTINGS = "⚙️ Settings"
+DAILY_GOALS = "🎯 Daily Goals"
+NOTIFICATIONS = "🔔 Notifications"
+
+def msg_back_to(text: str) -> str: return f"🔙 {text}"
+
+ERR_MSG_NOT_REGISTERED = "Please /start first to register."
+ERR_KB_NOT_REGISTERED = [[InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
+
 # Settings options
 # CHANGE_LANGUAGE = "Change Language"
-DAILY_GOALS = "Daily Goals"
-NOTIFICATIONS = "Notifications"
+
+KB_BTNS_BACK_TO_MENU_SETTINGS = [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                                 InlineKeyboardButton(msg_back_to(SETTINGS), callback_data="settings")]
 
 
 async def start(update: Update, context: CallbackContext) -> int:
@@ -106,6 +114,8 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
 
+    logger.info("DATA: %s", query.data)
+
     if query.data == "start_learning":
         return await start_learning(update, context)
     elif query.data == "add_words":
@@ -128,20 +138,18 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await handle_word_response(update, context, True)
     elif query.data.startswith("dont_know_"):
         return await handle_word_response(update, context, False)
-    
+    elif query.data == "notifications":
+        return await show_notifications(update, context)
+    elif query.data.startswith("notifications_set_"):
+        return await handle_notifications_set(update, context)
     return MAIN_MENU
 
 
 async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start a new learning cycle."""
     user = get_user_from_update(update)
-    if not user:
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -156,7 +164,7 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "No words available for learning. Add some words first!",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("Add Words", callback_data="add_words")],
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
                 ]),
             )
             return MAIN_MENU
@@ -171,7 +179,7 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 "No words available for learning. Add some words first!",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("Add Words", callback_data="add_words")],
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
                 ]),
             )
             return MAIN_MENU
@@ -218,7 +226,7 @@ async def add_words(update: Update, context: CallbackContext) -> int:
         "world\n"
         "python",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
         ]),
     )
     
@@ -228,8 +236,8 @@ async def add_words(update: Update, context: CallbackContext) -> int:
 async def handle_add_words(update: Update, context: CallbackContext) -> int:
     """Handle adding new words."""
     user = get_user_from_update(update)
-    if not user:
-        await update.message.reply_text("Please /start first to register.")
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -251,7 +259,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
                 "hello; world\n"
                 "python; java",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
             return ADD_WORDS
@@ -263,7 +271,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
             "Would you like to add more words?",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("Add More", callback_data="add_words")],
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
             ]),
         )
         
@@ -276,13 +284,8 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
 async def show_statistics(update: Update, context: CallbackContext) -> int:
     """Show user statistics."""
     user = get_user_from_update(update)
-    if not user:
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -302,7 +305,7 @@ async def show_statistics(update: Update, context: CallbackContext) -> int:
         await update.callback_query.edit_message_text(
             message,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
             ]),
         )
         
@@ -320,7 +323,7 @@ async def show_settings(update: Update, context: CallbackContext) -> int:
         # [InlineKeyboardButton(CHANGE_LANGUAGE, callback_data="change_language")],
         [InlineKeyboardButton(DAILY_GOALS, callback_data="daily_goals")],
         [InlineKeyboardButton(NOTIFICATIONS, callback_data="notifications")],
-        [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+        [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
     ]
     
     await query.edit_message_text(
@@ -335,13 +338,8 @@ async def show_settings(update: Update, context: CallbackContext) -> int:
 async def handle_language_selection(update: Update, context: CallbackContext) -> int:
     """Handle language selection."""
     user = get_user_from_update(update)
-    if not user:
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -357,7 +355,7 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
         await update.callback_query.edit_message_text(
             "Language settings updated successfully!",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
             ]),
         )
         
@@ -370,13 +368,8 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
 async def handle_word_response(update: Update, context: CallbackContext, is_known: bool) -> int:
     """Handle user's response to a word (know/don't know)."""
     user = get_user_from_update(update)
-    if not user:
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -390,7 +383,7 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
             await update.callback_query.edit_message_text(
                 "No active learning cycle found. Please start learning again.",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
             return MAIN_MENU
@@ -410,7 +403,7 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
             await update.callback_query.edit_message_text(
                 "Error: Word not found in your vocabulary.",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
             return MAIN_MENU
@@ -430,7 +423,7 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
             await update.callback_query.edit_message_text(
                 "Error: Word not found in current learning cycle.",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
             return MAIN_MENU
@@ -449,7 +442,7 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
                 "Would you like to start another one?",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("Start New Cycle", callback_data="start_learning")],
-                    [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
                 ]),
             )
             return MAIN_MENU
@@ -486,14 +479,8 @@ async def handle_word_response(update: Update, context: CallbackContext, is_know
 async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
     """Handle daily goals settings."""
     user = get_user_from_update(update)
-    if not user:
-        logger.warning(f"User not found for update: {update.effective_user.id}")
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -506,8 +493,7 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
         keyboard = [
             [InlineKeyboardButton("📚 Word Count Goals", callback_data="daily_goals_words")],
             [InlineKeyboardButton("⏱ Time Goals", callback_data="daily_goals_time")],
-            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
-            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            KB_BTNS_BACK_TO_MENU_SETTINGS,
         ]
 
         await update.callback_query.edit_message_text(
@@ -528,14 +514,8 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
 async def handle_daily_goals_words(update: Update, context: CallbackContext) -> int:
     """Handle word count goals settings."""
     user = get_user_from_update(update)
-    if not user:
-        logger.warning(f"User not found for update: {update.effective_user.id}")
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -548,9 +528,8 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
              for i in [5, 10, 15]],
             [InlineKeyboardButton(f"{i} words", callback_data=f"set_goal_words_{i}") 
              for i in [20, 25, 30]],
-            [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
-            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
-            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            [InlineKeyboardButton(msg_back_to(DAILY_GOALS), callback_data="daily_goals")],
+            KB_BTNS_BACK_TO_MENU_SETTINGS,
         ]
 
         await update.callback_query.edit_message_text(
@@ -569,14 +548,8 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
 async def handle_daily_goals_time(update: Update, context: CallbackContext) -> int:
     """Handle time goals settings."""
     user = get_user_from_update(update)
-    if not user:
-        logger.warning(f"User not found for update: {update.effective_user.id}")
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -589,9 +562,8 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
              for i in [5, 10, 15]],
             [InlineKeyboardButton(f"{i} minutes", callback_data=f"set_goal_time_{i}") 
              for i in [20, 30, 45]],
-            [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
-            [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
-            [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+            [InlineKeyboardButton(msg_back_to(DAILY_GOALS), callback_data="daily_goals")],
+            KB_BTNS_BACK_TO_MENU_SETTINGS,
         ]
 
         await update.callback_query.edit_message_text(
@@ -610,14 +582,8 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
 async def handle_set_goal(update: Update, context: CallbackContext) -> int:
     """Handle setting a new daily goal."""
     user = get_user_from_update(update)
-    if not user:
-        logger.warning(f"User not found for update: {update.effective_user.id}")
-        await update.callback_query.edit_message_text(
-            "Please /start first to register.",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")]
-            ]),
-        )
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -640,9 +606,8 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
         await update.callback_query.edit_message_text(
             message,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
-                [InlineKeyboardButton(BACK_TO_SETTINGS, callback_data="settings")],
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                [InlineKeyboardButton(msg_back_to(DAILY_GOALS), callback_data="daily_goals")],
+                KB_BTNS_BACK_TO_MENU_SETTINGS,
             ]),
         )
         
@@ -652,8 +617,103 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
         await update.callback_query.edit_message_text(
             "Error updating goal. Please try again.",
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(BACK_TO_GOALS, callback_data="daily_goals")],
-                [InlineKeyboardButton(BACK_TO_MENU, callback_data="back_to_menu")],
+                [InlineKeyboardButton(msg_back_to(DAILY_GOALS), callback_data="daily_goals")],
+                KB_BTNS_BACK_TO_MENU_SETTINGS,
+            ]),
+        )
+        return SETTINGS
+    finally:
+        db.close()
+
+
+async def show_notifications(update: Update, context: CallbackContext) -> int:
+    """Show notifications menu."""
+    user = get_user_from_update(update)
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+
+    if user.notifications_enabled:
+        en_dis_button = InlineKeyboardButton("🔕 Disable notifications", callback_data="notifications_set_off")
+        message_status = "Enabled"
+    else:
+        en_dis_button = InlineKeyboardButton("🔔 Enable notifications", callback_data="notifications_set_on")
+        message_status = "Disabled"
+    
+    keyboard = [
+        [en_dis_button],
+        [InlineKeyboardButton("🕒 Set time", callback_data="notifications_set_time")],
+        KB_BTNS_BACK_TO_MENU_SETTINGS,
+    ]
+    
+    await update.callback_query.edit_message_text(
+        f"🔔 Notifications\n\n"
+        f"Your notifications are currently set to:\n"
+        f"• Time: {user.notification_hour:02d}:00\n"
+        f"• Status: {message_status}\n\n"
+        "What would you like to do?",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+    
+    return SETTINGS
+
+
+async def handle_notifications_set(update: Update, context: CallbackContext) -> int:
+    """Handle setting notifications."""
+    user = get_user_from_update(update)
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        user_service = UserService(db)
+        
+        keyboard = []
+
+        if update.callback_query.data == "notifications_set_time":
+            keyboard.extend([
+                [InlineKeyboardButton(f"{i:02d}:00", callback_data=f"notifications_set_time_{i}") for i in range( 7,13)],
+                [InlineKeyboardButton(f"{i:02d}:00", callback_data=f"notifications_set_time_{i}") for i in range(13,19)],
+                [InlineKeyboardButton(f"{i:02d}:00", callback_data=f"notifications_set_time_{i}") for i in range(19,25)],
+                [InlineKeyboardButton(msg_back_to(NOTIFICATIONS), callback_data="notifications")],
+            ])
+            message = f"🕒 Notifications time\n\n"
+            message += f"Your notifications are currently set to:\n"
+            message += f"• Time: {user.notification_hour:02d}:00\n"
+            message += f"• Status: {'Enabled' if user.notifications_enabled else 'Disabled'}\n\n"
+            message += "What time would you like to receive notifications?\nChoose your preferred time:"
+        
+        elif update.callback_query.data.startswith("notifications_set_time_"):
+            hour = int(update.callback_query.data.split("_")[-1])
+            user_service.update_user_settings(user.id, notification_hour=hour, notifications_enabled=True)
+            message = f"🔔 Notifications will now be sent at {hour:02d}:00!"
+            keyboard.append([InlineKeyboardButton(msg_back_to(NOTIFICATIONS), callback_data="notifications")])
+        
+        elif update.callback_query.data == "notifications_set_off":
+            user_service.update_user_settings(user.id, notifications_enabled=False)
+            message = "🔕 Notifications disabled!"
+            keyboard.append([InlineKeyboardButton(msg_back_to(NOTIFICATIONS), callback_data="notifications")])
+        elif update.callback_query.data == "notifications_set_on":
+            user_service.update_user_settings(user.id, notifications_enabled=True)
+            message = f"🔔 Notifications will now be sent at {user.notification_hour:02d}:00!"
+            keyboard.append([InlineKeyboardButton(msg_back_to(NOTIFICATIONS), callback_data="notifications")])
+
+        keyboard.append(KB_BTNS_BACK_TO_MENU_SETTINGS)
+
+        await update.callback_query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+        
+        return SETTINGS
+    except ValueError as e:
+        logger.error(f"Error setting notifications for user {user.id}: {str(e)}")
+        await update.callback_query.edit_message_text(
+            "Error updating notifications. Please try again.",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(msg_back_to(NOTIFICATIONS), callback_data="notifications")],
+                KB_BTNS_BACK_TO_MENU_SETTINGS,
             ]),
         )
         return SETTINGS

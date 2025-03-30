@@ -7,6 +7,7 @@ from sqlalchemy import and_
 
 from enbot.models.models import User, UserWord, LearningCycle
 from enbot.services.word_service import WordService
+from enbot.config import settings
 
 
 class NotificationService:
@@ -26,7 +27,7 @@ class NotificationService:
             .filter(
                 and_(
                     User.notifications_enabled == True,
-                    User.day_start_hour == current_hour,
+                    User.notification_hour == current_hour,
                 )
             )
             .all()

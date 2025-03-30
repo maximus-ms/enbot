@@ -40,6 +40,7 @@ class User(Base, TimestampMixin):
     daily_goal_minutes = Column(Integer, default=10)
     daily_goal_words = Column(Integer, default=5)
     day_start_hour = Column(Integer, default=0)
+    notification_hour = Column(Integer, default=0)
     last_notification_time = Column(DateTime(timezone=True), nullable=True)
     notifications_enabled = Column(Boolean, default=True)
 
