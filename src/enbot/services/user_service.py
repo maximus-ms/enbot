@@ -170,9 +170,9 @@ class UserService:
         priority: int = 0,
     ) -> List[UserWord]:
         """Add new words to user's dictionary."""
+        if len(words) == 0: return []
         user = self.db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise ValueError(f"User {user_id} not found")
+        if not user: raise ValueError(f"User {user_id} not found")
 
         added_words = []
         for word_text in words:

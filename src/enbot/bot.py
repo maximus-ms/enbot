@@ -133,6 +133,8 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await handle_daily_goals_time(update, context)
     elif query.data.startswith("set_goal_"):
         return await handle_set_goal(update, context)
+    elif query.data.startswith("add_all_words_from_db"):
+        return await handle_add_all_words_from_db(update, context)
     elif query.data.startswith("know_"):
         return await handle_word_response(update, context, True)
     elif query.data.startswith("dont_know_"):
@@ -219,7 +221,9 @@ async def add_words(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     
     await query.edit_message_text(
-        "📝 Please enter words to add (one per line)\n",
+        ("📝 Please enter words (one per line)\n"
+        "Or press button to add all words from database\n"
+        ),
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Add all words from database (high priority)", callback_data="add_all_words_from_db_high")],
             [InlineKeyboardButton("Add all words from database (low priority)", callback_data="add_all_words_from_db_low")],
@@ -230,6 +234,46 @@ async def add_words(update: Update, context: CallbackContext) -> int:
     return ADD_WORDS
 
 
+async def handle_add_all_words_from_db(update: Update, context: CallbackContext) -> int:
+    """Handle adding all words from database."""
+    user = get_user_from_update(update)
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+
+    db = SessionLocal()
+    try:
+        user_service = UserService(db)
+        
+        priority = settings.learning.max_priority
+
+        if update.callback_query.data == "add_all_words_from_db_low":
+            priority = settings.learning.min_priority
+
+        logger.info("Non user words before")
+        words = user_service.get_non_user_words(user.id, 1000)
+        logger.info("Non user words: %s", words)
+
+        added_words = user_service.add_words(user.id, words, priority)
+        added_words_count = len(added_words)
+        if added_words_count == 0: message = "Nothing to add.\n"
+        else: message = f"Successfully added {added_words_count} word{'s' if added_words_count > 1 else ''}!\n"
+        message += "Would you like to add more words?"
+
+        await update.callback_query.edit_message_text(
+            message,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                 InlineKeyboardButton("📝 Add More", callback_data="add_words")],
+            ]),
+        )
+        
+        return MAIN_MENU
+        
+    finally:
+        db.close()
+
+
 async def handle_add_words(update: Update, context: CallbackContext) -> int:
     """Handle adding new words."""
     user = get_user_from_update(update)
@@ -237,53 +281,40 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
         await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
-    if update.callback_query is not None:
-        logger.info("DATA handle_add_words(): %s", update.callback_query.data)
-    elif update.message is not None:
-        logger.info("DATA handle_add_words(): %s", update.message.text)
-
     db = SessionLocal()
     try:
         user_service = UserService(db)
-        
-        words = []
+
         priority = settings.learning.max_priority
 
-        if update.callback_query is not None and update.callback_query.data.startswith("add_all_words_from_db"):
-            # Pressed button
-            if update.callback_query.data == "add_all_words_from_db_low":
-                priority = settings.learning.min_priority
-
-            words.extend(user_service.get_non_user_words(user.id, 1000))
-
-        if update.message is not None:
-            # Split text by newline
-            text = update.message.text
-            words.extend(word.strip() for word in text.split('\n') if word.strip())
-            
-            if not words:
-                await update.message.reply_text(
-                    "No valid words provided. Please try again.\n"
-                    "You can separate words by new lines.\n"
-                    "Example:\n"
-                    "hello\n"
-                    "world\n"
-                    "python",
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
-                    ]),
-                )
-                return ADD_WORDS
-
-        if words:
-            added_words = user_service.add_words(user.id, words, priority)
+        text = update.message.text
+        words = [word.strip() for word in text.split('\n') if word.strip()]
         
+        if not words:
+            await update.message.reply_text(
+                "No valid words provided. Please try again.\n"
+                "You can separate words by new lines.\n"
+                "Example:\n"
+                "hello\n"
+                "world\n"
+                "python",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
+                ]),
+            )
+            return ADD_WORDS
+
+        added_words = user_service.add_words(user.id, words, priority)
+        added_words_count = len(added_words)
+        if added_words_count == 0: message = "Nothing to add.\n"
+        else: message = f"Successfully added {added_words_count} word{'s' if added_words_count > 1 else ''}!\n"
+        message += "Would you like to add more words?"
+
         await update.message.reply_text(
-            f"Successfully added {len(added_words)} word(s)!\n"
-            "Would you like to add more words?",
+            message,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📝 Add More", callback_data="add_words")],
-                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                 InlineKeyboardButton("📝 Add More", callback_data="add_words")],
             ]),
         )
         
