@@ -9,10 +9,13 @@ from dotenv import load_dotenv
 # Define base directory
 BASE_DIR = Path(__file__).parent.parent.parent
 
-# Define data directory
-DATA_DIR = BASE_DIR / "data"
+# Load environment variables from .env file
+env_file = ".env.test" if os.getenv("ENV") == "test" else ".env"
+load_dotenv(env_file)
 
-# Define subdirectories
+
+# Define data directories from environment variables
+DATA_DIR = Path(os.getenv("DATA_DIR", "./data"))
 DICTIONARIES_DIR = DATA_DIR / "dictionaries"
 MEDIA_DIR = DATA_DIR / "media"
 PRONUNCIATIONS_DIR = MEDIA_DIR / "pronunciations"
@@ -22,8 +25,19 @@ IMAGES_DIR = MEDIA_DIR / "images"
 REPETITION_INTERVALS = [1, 3, 7, 14, 30]  # days between reviews
 REPETITION_HISTORY_PERCENTAGE = 0.3  # 30% of words in cycle should be from history
 
-# Load environment variables from .env file
-load_dotenv()
+
+def ensure_directories() -> None:
+    """Ensure all required directories exist."""
+    directories = [
+        DATA_DIR,
+        DICTIONARIES_DIR,
+        MEDIA_DIR,
+        PRONUNCIATIONS_DIR,
+        IMAGES_DIR,
+    ]
+    
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass

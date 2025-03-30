@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from enbot.app import EnBot
+from enbot.config import ensure_directories
 
 # Configure logging
 logging.basicConfig(
@@ -11,6 +12,10 @@ logging.basicConfig(
 
 async def main() -> None:
     """Run the bot."""
+    # Ensure all required directories exist
+    ensure_directories()
+    
+    # Start the bot
     bot = EnBot()
     await bot.start()
     await bot.run()

@@ -1,8 +1,8 @@
 """Tests for word service."""
+import os
 from datetime import datetime, timedelta, UTC
 from typing import Generator
 from unittest.mock import Mock, patch
-import os
 
 import pytest
 from faker import Faker

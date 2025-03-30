@@ -36,10 +36,10 @@ echo -e "${YELLOW}Installing pre-commit hooks...${NC}"
 pre-commit install
 
 # Create necessary directories
-echo -e "${YELLOW}Creating necessary directories...${NC}"
-mkdir -p logs
-mkdir -p data/media/pronunciations
-mkdir -p data/media/images
+# echo -e "${YELLOW}Creating necessary directories...${NC}"
+# mkdir -p logs
+# mkdir -p data/media/pronunciations
+# mkdir -p data/media/images
 
 # Check if .env file exists
 if [ ! -f ".env" ]; then
