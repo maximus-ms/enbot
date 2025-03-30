@@ -157,6 +157,10 @@ class WordService:
         self.db.commit()
         return True
 
+    def get_word_count(self) -> int:
+        """Get the count of words in the database."""
+        return self.db.query(Word).count()
+
     def get_user_words(
         self,
         user_id: int,

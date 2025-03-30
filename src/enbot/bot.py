@@ -26,6 +26,7 @@ from enbot.models.base import SessionLocal
 from enbot.models.models import User, UserWord, CycleWord
 from enbot.services.learning_service import LearningService
 from enbot.services.user_service import UserService
+from enbot.services.word_service import WordService
 from sqlalchemy import and_
 
 # Configure logging
@@ -292,14 +293,26 @@ async def show_statistics(update: Update, context: CallbackContext) -> int:
     try:
         user_service = UserService(db)
         stats = user_service.get_user_statistics(user.id)
-        
-        message = (
+        word_service = WordService(db)
+        total_words = word_service.get_word_count()
+        total_users = user_service.get_users_count()
+
+        message = ""
+        if user.is_admin:
+            message += (
+                "📊 Global statistics:\n\n"
+                f"Total words in database: {total_words}\n"
+                f"Total users in database: {total_users}\n\n"
+            )
+
+        message += (
             "📊 Your Learning Statistics (Last 30 Days):\n\n"
             f"Total Words Learned: {stats['total_words']}\n"
             f"Total Time Spent: {stats['total_time_minutes']:.1f} minutes\n"
             f"Total Learning Cycles: {stats['total_cycles']}\n"
             f"Average Words per Cycle: {stats['average_words_per_cycle']:.1f}\n"
             f"Average Time per Cycle: {stats['average_time_per_cycle']:.1f} minutes\n"
+            f"Total words in your vocabulary: {stats['total_user_words']}\n"
         )
         
         await update.callback_query.edit_message_text(

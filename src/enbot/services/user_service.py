@@ -39,6 +39,12 @@ class UserService:
         )
         logger.info(f"Found {len(words)} unlearned words for user {user_id}")
         return words
+    
+    def get_user_word_count(self, user_id: int, learned: Optional[bool] = None) -> int:
+        """Get the count of unlearned words for a user."""
+        query = self.db.query(UserWord).filter(UserWord.user_id == user_id)
+        if learned is not None: query = query.filter(UserWord.is_learned == learned)
+        return query.count()
 
     def get_or_create_user(
         self,
@@ -264,6 +270,8 @@ class UserService:
             )
             .all()
         )
+        
+        total_user_words = self.get_user_word_count(user_id)
 
         # Calculate statistics
         total_words = sum(cycle.words_learned for cycle in cycles)
@@ -276,7 +284,12 @@ class UserService:
             "total_cycles": total_cycles,
             "average_words_per_cycle": total_words / total_cycles if total_cycles > 0 else 0,
             "average_time_per_cycle": total_time / total_cycles if total_cycles > 0 else 0,
+            "total_user_words": total_user_words,
         }
+
+    def get_users_count(self) -> int:
+        """Get the total number of users in the database."""
+        return self.db.query(User).count()
 
     def log_user_activity(
         self,

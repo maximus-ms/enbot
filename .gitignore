@@ -39,7 +39,7 @@ ENV/
 *.sqlite3
 
 # Logs
-*.log
+**/*.log
 
 # Media files
 data/media/*
