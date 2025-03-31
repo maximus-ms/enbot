@@ -291,6 +291,13 @@ class UserService:
         
         return added_words
 
+    def delete_user_word(self, user_id: int, word_id: int) -> None:
+        """Delete a word from user's dictionary."""
+        user_word = self.db.query(UserWord).filter(UserWord.user_id == user_id, UserWord.word_id == word_id).first()
+        if not user_word: raise ValueError(f"Word {word_id} not found for user {user_id}")
+        self.db.delete(user_word)
+        self.db.commit()
+
     def get_user_statistics(
         self,
         user_id: int,

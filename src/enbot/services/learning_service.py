@@ -118,7 +118,7 @@ class LearningService:
         logger.info(f"Words after sample: {words}")
         return words
 
-    def get_words_for_cycle(self, user_id: int) -> List[UserWord]:
+    def get_words_for_cycle(self, user_id: int) -> Tuple[List[UserWord], Optional[LearningCycle]]:
         """Get words for a new learning cycle."""
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user: raise ValueError(f"User {user_id} not found")
@@ -145,16 +145,16 @@ class LearningService:
             if cycle_words: break
             else: self.complete_cycle(cycle.id)
 
-        return cycle_words
+        return cycle_words, cycle
     
-    def get_words_for_cycle_or_create(self, user_id: int) -> List[UserWord]:
+    def get_words_for_cycle_or_create(self, user_id: int) -> Tuple[List[UserWord], LearningCycle]:
         """Get the active cycle or create a new one if it doesn't exist."""
         cycle = self.get_active_cycle(user_id)
         if not cycle:
             cycle = self.create_new_cycle(user_id)
-        words = self.get_words_for_cycle(user_id)
+        words, cycle = self.get_words_for_cycle(user_id)
         if not words: self.complete_cycle(cycle.id)
-        return words
+        return words, cycle
 
     def add_words_to_cycle(
         self, cycle_id: int, user_words: List[UserWord]
@@ -209,11 +209,32 @@ class LearningService:
 
         self.db.commit()
 
+    def remove_word_from_cycle(self, cycle_id: int, user_word_id: int) -> None:
+        """Remove a word from the current cycle."""
+        cycle_word = (
+            self.db.query(CycleWord)
+            .filter(
+                and_(
+                    CycleWord.cycle_id == cycle_id,
+                    CycleWord.user_word_id == user_word_id,
+                )
+            )
+            .first()
+        )
+        if not cycle_word:
+            raise ValueError(f"Word {user_word_id} not found in cycle {cycle_id}")
+
+        self.db.delete(cycle_word)
+        self.db.commit()
+    
+
     def _calculate_next_review(self, review_stage: int) -> datetime:
         """Calculate the next review date based on the review stage."""
+        x = 1
         if review_stage >= len(settings.learning.repetition_intervals):
             review_stage = len(settings.learning.repetition_intervals) - 1
-        days = settings.learning.repetition_intervals[review_stage]
+            x = 10
+        days = settings.learning.repetition_intervals[review_stage] * x
         next_review = datetime.now(UTC) + timedelta(days=days)
         return next_review.replace(tzinfo=UTC)  # Ensure timezone awareness
 
