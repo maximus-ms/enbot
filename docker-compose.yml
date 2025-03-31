@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'
 
 services:
   enbot:
@@ -7,8 +7,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./data:/app/data
-      - ./logs:/app/logs
-      - ./.env:/app/.env
+    env_file:
+      - .env
     environment:
       - TZ=UTC
     healthcheck:
