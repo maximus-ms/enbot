@@ -176,8 +176,8 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         keyboard = [[
             InlineKeyboardButton("🤷‍♂️ I don't know", callback_data=f"learning_response_dontknow_{word.id}"),
             InlineKeyboardButton("❌ Don't learn", callback_data=f"learning_response_dontlearn_{word.id}"),    
-            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}"),
-        ]]
+            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}")],
+            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         message = (f"Let's learn some words!\n\n"
@@ -471,11 +471,12 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
         word = random.choice(words).word
         example = word.examples[0] if word.examples else None
 
-        keyboard = [[
-            InlineKeyboardButton("🤷‍♂️ I don't know", callback_data=f"learning_response_dontknow_{word.id}"),
+        keyboard = [
+            [InlineKeyboardButton("🤷‍♂️ I don't know", callback_data=f"learning_response_dontknow_{word.id}"),
             InlineKeyboardButton("❌ Don't learn", callback_data=f"learning_response_dontlearn_{word.id}"),    
-            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}"),
-        ]]
+            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}")],
+            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+        ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 

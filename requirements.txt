@@ -6,4 +6,11 @@ black==24.2.0
 isort==5.13.2
 mypy==1.8.0
 Faker==22.6.0
-prometheus-client==0.19.0 
+prometheus-client==0.19.0
+deep_translator==1.11.4
+gtts==2.5.4
+eng-to-ipa==0.0.2
+joblib==1.4.2
+nltk==3.9.1
+regex==2024.11.6
+tqdm==4.67.1
