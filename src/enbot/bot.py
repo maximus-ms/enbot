@@ -155,56 +155,36 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     db = SessionLocal()
     try:
-        learning_service = LearningService(db)
         user_service = UserService(db)
 
-        # Check if user has any words
-        user_words = user_service.get_user_words(user.id)
-        if not user_words:
-            await update.callback_query.edit_message_text(
-                "No words available for learning. Add some words first!",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Add Words", callback_data="add_words")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
-                ]),
-            )
-            return MAIN_MENU
-
-        # Create a new cycle
-        cycle = learning_service.create_new_cycle(user.id)
-
-        # Get words for learning
-        words = learning_service.get_words_for_cycle(user.id, settings.learning.words_per_cycle)
+        learning_service = LearningService(db)
+        words = learning_service.get_words_for_cycle_or_create(user.id)
+        logger.info(f"User {user.id} has {len(words)} words for learning")
         if not words:
             await update.callback_query.edit_message_text(
                 "No words available for learning. Add some words first!",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Add Words", callback_data="add_words")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                    InlineKeyboardButton("📝 Add Words", callback_data="add_words")],
                 ]),
             )
             return MAIN_MENU
 
-        # Add words to cycle
-        cycle_words = learning_service.add_words_to_cycle(cycle.id, words)
         word = words[0].word
         example = word.examples[0] if word.examples else None
 
         # Show the first word
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ I know this", callback_data=f"know_{word.id}"),
-                InlineKeyboardButton("❌ Don't know", callback_data=f"dont_know_{word.id}"),
-            ]
-        ]
+        keyboard = [[
+            InlineKeyboardButton("✅ I know this", callback_data=f"know_{word.id}"),
+            InlineKeyboardButton("❌ Don't know", callback_data=f"dont_know_{word.id}"),
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        message = f"Let's learn some words!\n\n" \
-                 f"Word: {word.text}\n" \
-                 f"Translation: {word.translation}"
+        message = (f"Let's learn some words!\n\n"
+                   f"Word: {word.text}\n"
+                   f"Translation: {word.translation}")
         
-        if example:
-            message += f"\nExample: {example.sentence}"
+        if example: message += f"\nExample: {example.sentence}"
 
         await update.callback_query.edit_message_text(
             message,
