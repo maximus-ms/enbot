@@ -5,6 +5,7 @@ import os
 import re
 import random
 import logging
+from datetime import datetime, timedelta
 from faker import Faker
 from deep_translator import GoogleTranslator
 from gtts import gTTS
@@ -15,21 +16,56 @@ from nltk.corpus import wordnet
 from enbot.config import settings
 from enbot.models.models import Example, Word
 
-fake = Faker()
-
-nltk.download("wordnet")
-
 logger = logging.getLogger(__name__)
 
 class ContentGenerator:
     """Service for generating word content using Faker."""
+    _instance = None
+    _initialized = False
+    _last_check = None
+    _check_interval = timedelta(days=7)  # Check for updates every 7 days
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ContentGenerator, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(self):
+        if not ContentGenerator._initialized:
+            self._check_and_update_nltk()
+            self.faker = Faker()
+            ContentGenerator._initialized = True
+            logger.info("ContentGenerator initialized")
+
+    def _check_and_update_nltk(self):
+        """Check and update NLTK data if needed."""
+        current_time = datetime.now()
+        
+        # Check if we need to verify updates
+        if (ContentGenerator._last_check is None or 
+            current_time - ContentGenerator._last_check > ContentGenerator._check_interval):
+            
+            try:
+                # Check if wordnet is installed
+                nltk.data.find('corpora/wordnet')
+                
+                # Try to update NLTK data
+                try:
+                    nltk.download('wordnet', quiet=True)
+                    logger.info("Checked for NLTK wordnet updates")
+                except Exception as e:
+                    logger.warning(f"Could not update NLTK data: {e}")
+                
+            except LookupError:
+                # Wordnet is not installed, download it
+                nltk.download('wordnet', quiet=True)
+                logger.info("Downloaded NLTK wordnet data")
+            
+            ContentGenerator._last_check = current_time
 
     @staticmethod
     def generate_translation(word: str, target_lang: str, native_lang: str) -> str:
         """Generate a translation for a word."""
-        # In a real implementation, this would use a translation API
-        # For now, we'll just return a fake translation
-        # return fake.word() if len(word.split()) == 1 else fake.sentence()
         try:
             translator = GoogleTranslator(source=target_lang, target=native_lang)
             translation = translator.translate(word)

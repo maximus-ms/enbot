@@ -8,6 +8,8 @@ from enbot.config import ensure_directories, settings
 from typing import Optional
 
 
+logger = None
+
 # Configure logging
 def setup_logging(level: Optional[int] = None) -> None:
     """Configure logging for the entire application.
@@ -16,6 +18,8 @@ def setup_logging(level: Optional[int] = None) -> None:
         level: Optional logging level. If None, defaults to INFO.
         dir: Optional directory for log files. If None, uses default logs directory.
     """
+    global logger
+
     # Set default level if not provided
     if level is None:
         level = settings.logging.level
@@ -74,17 +78,25 @@ def setup_logging(level: Optional[int] = None) -> None:
         except Exception as e:
             print(f"Warning: Could not set up file logging: {e}")
 
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.WARNING)
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
+    logger = logging.getLogger()
+
     # Prevent propagation to avoid duplicate logs
     root_logger.propagate = False
 
+
 async def shutdown(signal, loop):
     """Cleanup tasks tied to the service's shutdown."""
-    print(f"\nReceived exit signal {signal.name}...")
+    print()  # Print newline before logging
+    logger.info(f"Received exit signal {signal.name}...")
     
     tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
     [task.cancel() for task in tasks]
     
-    print(f"Cancelling {len(tasks)} outstanding tasks")
+    logger.info(f"Cancelling {len(tasks)} outstanding tasks")
     await asyncio.gather(*tasks, return_exceptions=True)
     
     loop.stop()
@@ -92,8 +104,8 @@ async def shutdown(signal, loop):
 def handle_exception(loop, context):
     """Handle exceptions in the event loop."""
     msg = context.get("exception", context["message"])
-    print(f"Caught exception: {msg}")
-    print("Shutting down...")
+    logger.error(f"Caught exception: {msg}")
+    logger.info("Shutting down...")
     # Don't create a new task here, just stop the loop
     loop.stop()
 
@@ -117,7 +129,7 @@ async def main() -> None:
     
     try:
         # Start the bot
-        print("Starting bot...")
+        logger.info("Starting bot...")
         bot = EnBot()
         await bot.start()
         
@@ -129,7 +141,7 @@ async def main() -> None:
                 break
     finally:
         # Cleanup
-        print("Cleaning up...")
+        logger.info("Cleaning up...")
         await bot.stop()
 
 if __name__ == "__main__":
@@ -143,6 +155,6 @@ if __name__ == "__main__":
         # Run the main function
         loop.run_until_complete(main())
     except KeyboardInterrupt:
-        print("\nReceived keyboard interrupt, shutting down...")
+        logger.info("\nReceived keyboard interrupt, shutting down...")
     finally:
         loop.close() 

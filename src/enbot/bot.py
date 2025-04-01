@@ -15,11 +15,11 @@ from telegram.ext import (
     Application,
     CallbackContext,
     CommandHandler,
-    ConversationHandler,
     MessageHandler,
     CallbackQueryHandler,
     filters,
     ContextTypes,
+    ConversationHandler,
 )
 
 from enbot.config import settings
@@ -30,22 +30,11 @@ from enbot.services.user_service import UserService
 from enbot.services.word_service import WordService
 from sqlalchemy import and_
 
-# Configure logging
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
+# Get logger for this module
 logger = logging.getLogger(__name__)
 
 # Conversation states
-(
-    MAIN_MENU,
-    LEARNING,
-    SETTINGS,
-    ADD_WORDS,
-    STATISTICS,
-    LANGUAGE_SELECTION,
-) = range(6)
+MAIN_MENU, ADDING_WORDS = range(2)
 
 # Button texts
 MENU = "🏠 Menu"
@@ -73,10 +62,17 @@ def make_user_id(user_id: int) -> int:
     return user_id# + 1 # TODO: Only for testing
 
 
-async def start(update: Update, context: CallbackContext) -> int:
+async def log_received(update: Update, context_type: str) -> None:
+    """Log message."""
+    logger.info(f"Received @{context_type:8} from user {update.effective_user.username} ({update.effective_user.id})")
+
+
+async def handle_start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and show main menu."""
     user = update.effective_user
     db = SessionLocal()
+    
+    await log_received(update, "start")
     
     try:
         user_service = UserService(db)
@@ -104,7 +100,6 @@ async def start(update: Update, context: CallbackContext) -> int:
             await update.message.reply_text(message, reply_markup=reply_markup)
         
         return MAIN_MENU
-        
     finally:
         db.close()
 
@@ -114,7 +109,7 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     query = update.callback_query
     await query.answer()
 
-    logger.info("DATA: %s", query.data)
+    await log_received(update, "callback")
 
     if query.data == "start_learning":
         return await start_learning(update, context)
@@ -127,7 +122,7 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
     elif query.data == "settings":
         return await show_settings(update, context)
     elif query.data == "back_to_menu":
-        return await start(update, context)
+        return await handle_start(update, context)
     elif query.data == "daily_goals":
         return await handle_daily_goals(update, context)
     elif query.data == "daily_goals_words":
@@ -142,10 +137,25 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await show_notifications(update, context)
     elif query.data.startswith("notifications_set_"):
         return await handle_notifications_set(update, context)
+    
     return MAIN_MENU
 
 
-async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def handle_message(update: Update, context: CallbackContext) -> None:
+    """Handle messages."""
+    user = get_user_from_update(update)
+    if not user: 
+        await update.message.reply_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return
+
+    await log_received(update, "message")
+
+    await update.message.reply_text("Please start with /start")
+
+    return MAIN_MENU
+
+
+async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Start a new learning cycle."""
     user = get_user_from_update(update)
     if not user: 
@@ -191,7 +201,6 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             reply_markup=reply_markup,
         )
         
-        return LEARNING
     finally:
         db.close()
 
@@ -211,10 +220,10 @@ async def add_words(update: Update, context: CallbackContext) -> int:
         ]),
     )
     
-    return ADD_WORDS
+    return ADDING_WORDS
 
 
-async def handle_add_all_words_from_db(update: Update, context: CallbackContext) -> int:
+async def handle_add_all_words_from_db(update: Update, context: CallbackContext) -> None:
     """Handle adding all words from database."""
     user = get_user_from_update(update)
     if not user: 
@@ -246,8 +255,6 @@ async def handle_add_all_words_from_db(update: Update, context: CallbackContext)
             ]),
         )
         
-        return MAIN_MENU
-        
     finally:
         db.close()
 
@@ -255,8 +262,9 @@ async def handle_add_all_words_from_db(update: Update, context: CallbackContext)
 async def handle_add_words(update: Update, context: CallbackContext) -> int:
     """Handle adding new words."""
     user = get_user_from_update(update)
+
     if not user: 
-        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        await update.message.reply_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
 
     db = SessionLocal()
@@ -280,7 +288,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
                     [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
-            return ADD_WORDS
+            return ADDING_WORDS
 
         added_words = user_service.add_words(user.id, words, priority)
         added_words_count = len(added_words)
@@ -296,13 +304,13 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
             ]),
         )
         
-        return MAIN_MENU
-        
     finally:
         db.close()
 
+    return ADDING_WORDS
 
-async def show_statistics(update: Update, context: CallbackContext) -> int:
+
+async def show_statistics(update: Update, context: CallbackContext) -> None:
     """Show user statistics."""
     user = get_user_from_update(update)
     if not user: 
@@ -342,13 +350,13 @@ async def show_statistics(update: Update, context: CallbackContext) -> int:
             ]),
         )
         
-        return MAIN_MENU
-        
     finally:
         db.close()
 
+    return MAIN_MENU
 
-async def show_settings(update: Update, context: CallbackContext) -> int:
+
+async def show_settings(update: Update, context: CallbackContext) -> None:
     """Show settings menu."""
     query = update.callback_query
     
@@ -364,11 +372,11 @@ async def show_settings(update: Update, context: CallbackContext) -> int:
         "What would you like to change?",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
-    
-    return SETTINGS
+
+    return MAIN_MENU
 
 
-async def handle_language_selection(update: Update, context: CallbackContext) -> int:
+async def handle_language_selection(update: Update, context: CallbackContext) -> None:
     """Handle language selection."""
     user = get_user_from_update(update)
     if not user: 
@@ -392,13 +400,11 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
             ]),
         )
         
-        return MAIN_MENU
-        
     finally:
         db.close()
 
-
-async def handle_learning_response(update: Update, context: CallbackContext) -> int:
+    return MAIN_MENU
+async def handle_learning_response(update: Update, context: CallbackContext) -> None:
     """Handle user's response to a word (know/don't know)."""
 
     user = get_user_from_update(update)
@@ -424,7 +430,7 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
                     [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
-            return MAIN_MENU
+            return
 
         word = None
         word_ix = None
@@ -442,7 +448,7 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
                     [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
                 ]),
             )
-            return MAIN_MENU
+            return
 
         # Mark the word as learned if user knows it
         if polarity and action == "know":
@@ -465,7 +471,7 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
                     [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
                 ]),
             )
-            return MAIN_MENU
+            return
 
         # Show the next word
         word = random.choice(words).word
@@ -491,12 +497,11 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
             reply_markup=reply_markup,
         )
         
-        return LEARNING
     finally:
         db.close()
 
-
-async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
+    return MAIN_MENU
+async def handle_daily_goals(update: Update, context: CallbackContext) -> None:
     """Handle daily goals settings."""
     user = get_user_from_update(update)
     if not user: 
@@ -526,12 +531,13 @@ async def handle_daily_goals(update: Update, context: CallbackContext) -> int:
         )
         
         logger.info(f"User {user.id} opened daily goals menu")
-        return SETTINGS
     finally:
         db.close()
 
+    return MAIN_MENU
 
-async def handle_daily_goals_words(update: Update, context: CallbackContext) -> int:
+
+async def handle_daily_goals_words(update: Update, context: CallbackContext) -> None:
     """Handle word count goals settings."""
     user = get_user_from_update(update)
     if not user: 
@@ -560,12 +566,11 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
         )
         
         logger.info(f"User {user.id} opened word goals menu")
-        return SETTINGS
     finally:
         db.close()
 
-
-async def handle_daily_goals_time(update: Update, context: CallbackContext) -> int:
+    return MAIN_MENU
+async def handle_daily_goals_time(update: Update, context: CallbackContext) -> None:
     """Handle time goals settings."""
     user = get_user_from_update(update)
     if not user: 
@@ -594,12 +599,11 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> i
         )
         
         logger.info(f"User {user.id} opened time goals menu")
-        return SETTINGS
     finally:
         db.close()
 
-
-async def handle_set_goal(update: Update, context: CallbackContext) -> int:
+    return MAIN_MENU
+async def handle_set_goal(update: Update, context: CallbackContext) -> None:
     """Handle setting a new daily goal."""
     user = get_user_from_update(update)
     if not user: 
@@ -631,7 +635,6 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
             ]),
         )
         
-        return SETTINGS
     except ValueError as e:
         logger.error(f"Error setting goal for user {user.id}: {str(e)}")
         await update.callback_query.edit_message_text(
@@ -641,12 +644,11 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> int:
                 KB_BTNS_BACK_TO_MENU_SETTINGS,
             ]),
         )
-        return SETTINGS
     finally:
         db.close()
 
-
-async def show_notifications(update: Update, context: CallbackContext) -> int:
+    return MAIN_MENU
+async def show_notifications(update: Update, context: CallbackContext) -> None:
     """Show notifications menu."""
     user = get_user_from_update(update)
     if not user: 
@@ -675,10 +677,10 @@ async def show_notifications(update: Update, context: CallbackContext) -> int:
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
     
-    return SETTINGS
+    return MAIN_MENU
 
 
-async def handle_notifications_set(update: Update, context: CallbackContext) -> int:
+async def handle_notifications_set(update: Update, context: CallbackContext) -> None:
     """Handle setting notifications."""
     user = get_user_from_update(update)
     if not user: 
@@ -726,7 +728,6 @@ async def handle_notifications_set(update: Update, context: CallbackContext) -> 
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
         
-        return SETTINGS
     except ValueError as e:
         logger.error(f"Error setting notifications for user {user.id}: {str(e)}")
         await update.callback_query.edit_message_text(
@@ -736,9 +737,10 @@ async def handle_notifications_set(update: Update, context: CallbackContext) -> 
                 KB_BTNS_BACK_TO_MENU_SETTINGS,
             ]),
         )
-        return SETTINGS
     finally:
         db.close()
+
+    return MAIN_MENU
 
 
 def get_user_from_update(update: Update) -> Optional[User]:
@@ -758,35 +760,28 @@ def get_user_from_update(update: Update) -> Optional[User]:
 def main() -> None:
     """Start the bot."""
     # Create the Application
-    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+    application = Application.builder().token(settings.bot.token).build()
 
-    # Add conversation handler
+    application.add_handler(CommandHandler("start", handle_start))
+
+    # Add callback query handler (buttons)
+    application.add_handler(CallbackQueryHandler(handle_callback))
+    
+    # Create conversation handler
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", handle_start)],
         states={
             MAIN_MENU: [
-                CallbackQueryHandler(handle_callback),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message),
             ],
-            LEARNING: [
-                CallbackQueryHandler(handle_callback),
-            ],
-            ADD_WORDS: [
+            ADDING_WORDS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_words),
-                CallbackQueryHandler(handle_callback),
-            ],
-            SETTINGS: [
-                CallbackQueryHandler(handle_callback),
-            ],
-            STATISTICS: [
-                CallbackQueryHandler(handle_callback),
-            ],
-            LANGUAGE_SELECTION: [
-                CallbackQueryHandler(handle_callback),
             ],
         },
-        fallbacks=[CommandHandler("start", start)],
+        fallbacks=[CommandHandler("start", handle_start)],
     )
-    
+
+    # Add conversation handler
     application.add_handler(conv_handler)
 
     # Start the Bot
