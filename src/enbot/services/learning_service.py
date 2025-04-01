@@ -41,11 +41,11 @@ class LearningService:
             .first()
         )
 
-    def create_new_cycle(self, user_id: int) -> Tuple[List[CycleWord], LearningCycle]:
+    def create_new_cycle(self, user_id: int) -> LearningCycle:
         """Create a new learning cycle for the user and choose words for it."""
 
         words = self.choose_words_for_cycle(user_id, settings.learning.words_per_cycle)
-        if not words: return [], None
+        if not words: return None
 
         cycle = LearningCycle(
             user_id=user_id,
@@ -58,9 +58,9 @@ class LearningService:
         self.db.commit()
         self.db.refresh(cycle)
 
-        cycle_words = self.add_words_to_cycle(cycle.id, words)
+        self.add_words_to_cycle(cycle.id, words)
 
-        return cycle_words, cycle
+        return cycle
 
     def _choose_words_with_priority(self, words: List[UserWord], num_words: int) -> List[UserWord]:
         """Choose words for a new learning cycle with priority."""
@@ -151,7 +151,8 @@ class LearningService:
         """Get the active cycle or create a new one if it doesn't exist."""
         words, cycle = self.get_words_for_cycle(user_id)
         if not cycle:
-            words, cycle = self.create_new_cycle(user_id)
+            cycle = self.create_new_cycle(user_id)
+            words, cycle = self.get_words_for_cycle(user_id)
         if not words and cycle:
             self.complete_cycle(cycle.id)
             cycle = None
