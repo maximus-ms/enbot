@@ -64,7 +64,10 @@ def make_user_id(user_id: int) -> int:
 
 async def log_received(update: Update, context_type: str) -> None:
     """Log message."""
-    logger.info(f"Received @{context_type:8} from user {update.effective_user.username} ({update.effective_user.id})")
+    if context_type == "start": txt = ""
+    elif update.callback_query: txt = f" {update.callback_query.data}"
+    elif update.message: txt = f" {update.message.text}"
+    logger.info(f"Received @{context_type:8} from user {update.effective_user.username} ({update.effective_user.id}){txt}")
 
 
 async def handle_start(update: Update, context: CallbackContext) -> int:
@@ -211,7 +214,8 @@ async def add_words(update: Update, context: CallbackContext) -> int:
     
     await query.edit_message_text(
         ("📝 Please enter words (one per line)\n"
-        "Or press button to add all words from database\n"
+         "You can add words with translation (e.g. hello - привіт)\n"
+         "Or press button to add all words from database\n"
         ),
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Add all words from database (high priority)", callback_data="add_all_words_from_db_high")],
@@ -263,6 +267,8 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
     """Handle adding new words."""
     user = get_user_from_update(update)
 
+    await log_received(update, "message")
+
     if not user: 
         await update.message.reply_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
         return MAIN_MENU
@@ -281,7 +287,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
                 "No valid words provided. Please try again.\n"
                 "You can separate words by new lines.\n"
                 "Example:\n"
-                "hello\n"
+                "hello - привіт\n"
                 "world\n"
                 "python",
                 reply_markup=InlineKeyboardMarkup([
@@ -289,18 +295,21 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
                 ]),
             )
             return ADDING_WORDS
+        
+        words_count = len(words)
+
+        await update.message.reply_text(f"Adding {words_count} word{'s' if words_count > 1 else ''}, please wait...")
 
         added_words = user_service.add_words(user.id, words, priority)
         added_words_count = len(added_words)
         if added_words_count == 0: message = "Nothing to add.\n"
-        else: message = f"Successfully added {added_words_count} word{'s' if added_words_count > 1 else ''}!\n"
-        message += "Would you like to add more words?"
+        else: message = f"Successfully added {added_words_count} word{'s' if added_words_count > 1 else ''}!\n\n"
+        message += "You can add more words or go to menu."
 
         await update.message.reply_text(
             message,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
-                 InlineKeyboardButton("📝 Add More", callback_data="add_words")],
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
             ]),
         )
         
@@ -404,6 +413,8 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
         db.close()
 
     return MAIN_MENU
+
+
 async def handle_learning_response(update: Update, context: CallbackContext) -> None:
     """Handle user's response to a word (know/don't know)."""
 
@@ -501,6 +512,8 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
         db.close()
 
     return MAIN_MENU
+
+
 async def handle_daily_goals(update: Update, context: CallbackContext) -> None:
     """Handle daily goals settings."""
     user = get_user_from_update(update)
@@ -570,6 +583,8 @@ async def handle_daily_goals_words(update: Update, context: CallbackContext) -> 
         db.close()
 
     return MAIN_MENU
+
+
 async def handle_daily_goals_time(update: Update, context: CallbackContext) -> None:
     """Handle time goals settings."""
     user = get_user_from_update(update)
@@ -603,6 +618,8 @@ async def handle_daily_goals_time(update: Update, context: CallbackContext) -> N
         db.close()
 
     return MAIN_MENU
+
+
 async def handle_set_goal(update: Update, context: CallbackContext) -> None:
     """Handle setting a new daily goal."""
     user = get_user_from_update(update)
@@ -648,6 +665,8 @@ async def handle_set_goal(update: Update, context: CallbackContext) -> None:
         db.close()
 
     return MAIN_MENU
+
+
 async def show_notifications(update: Update, context: CallbackContext) -> None:
     """Show notifications menu."""
     user = get_user_from_update(update)

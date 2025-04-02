@@ -169,9 +169,11 @@ class ContentGenerator:
         word: str,
         target_lang: str,
         native_lang: str,
+        translation: Optional[str] = None,
     ) -> tuple[Word, List[Example]]:
         """Generate all content for a word."""
-        translation = cls.generate_translation(word, target_lang, native_lang)
+        if translation is None:
+            translation = cls.generate_translation(word, target_lang, native_lang)
         transcription = cls.generate_transcription(word, target_lang)
         pronunciation_file = cls.generate_pronunciation(word, target_lang)
         image_file = cls.generate_image(word)

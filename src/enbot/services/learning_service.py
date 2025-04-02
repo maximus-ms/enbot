@@ -265,4 +265,4 @@ class LearningService:
             category=category,
         )
         self.db.add(log)
-        self.db.commit() 
+        self.db.commit()

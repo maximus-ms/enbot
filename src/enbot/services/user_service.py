@@ -173,7 +173,18 @@ class UserService:
         words: List[str],
         priority: int = 0,
     ) -> List[UserWord]:
-        """Add new words to user's dictionary."""
+        """Add new words to user's dictionary.
+        
+        Args:
+            user_id: int - user id
+            words: List[str] - list of words to add
+            priority: int - priority of the words
+
+        Returns:
+            List[UserWord] - list of added words
+
+        User can provide words with translation (e.g. hello - привіт) or without (e.g. world, python).
+        """
         if len(words) == 0: return []
         user = self.db.query(User).filter(User.id == user_id).first()
         if not user: raise ValueError(f"User {user_id} not found")
@@ -200,6 +211,14 @@ class UserService:
 
         added_words = []
         for word_text in words:
+            translation = None
+            try:
+                if " - " in word_text:
+                    word_text, translation = [part.strip() for part in word_text.split(" - ")]
+            except Exception:
+                logger.error(f"Error splitting word: {word_text}")
+                pass
+               
             # Check if word already exists
             existing_word = (
                 self.db.query(Word)
@@ -227,6 +246,7 @@ class UserService:
 
                 if existing_user_word:
                     # Update priority if higher
+                    append_this_word = False
                     if priority > existing_user_word.priority:
                         existing_user_word.priority = priority
                         self.log_user_activity(
@@ -236,7 +256,19 @@ class UserService:
                             "word_priority_updated",
                         )
                         if priority > existing_user_word.priority+1:
-                            added_words.append(existing_user_word)
+                            append_this_word = True
+                    if translation is not None:
+                        if existing_user_word.translation != translation:
+                            existing_user_word.translation = translation
+                            self.log_user_activity(
+                                user_id,
+                                f"Word translation updated: {word_text} - {translation}",
+                                "INFO",
+                                "word_translation_updated",
+                            )
+                            append_this_word = True
+                    if append_this_word:
+                        added_words.append(existing_user_word)
                     continue
 
                 user_word = UserWord(
@@ -254,6 +286,7 @@ class UserService:
                     word_text,
                     user.target_language,
                     user.native_language,
+                    translation,
                 )
                 self.db.add(word_obj)
                 self.db.commit()
