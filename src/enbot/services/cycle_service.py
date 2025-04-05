@@ -344,7 +344,6 @@ class WordProgress:
             current_method=self.current_method.value if self.current_method else None,
             last_attempt=self.last_attempt.isoformat() if self.last_attempt else None,
             attempts={m.value: count for m, count in self.attempts.items()},
-            completed=self.is_complete()
         )
 
     @classmethod
@@ -358,7 +357,6 @@ class WordProgress:
         progress.current_method = TrainingMethod(data.current_method) if data.current_method else None
         progress.last_attempt = datetime.fromisoformat(data.last_attempt) if data.last_attempt else None
         progress.attempts = {TrainingMethod(m): count for m, count in data.attempts.items()}
-        progress.completed = data.completed
         return progress
 
 
@@ -539,6 +537,8 @@ class CycleService:
     def get_next_word(self, user_id: int, previous_progress: WordProgress = None) -> Optional[TrainingRequest]:
         """Get the next word to train for a user."""
         
+        # TODO: if previous_progress is the last, get different action!!!! in case we send the same word with the same method again Telegram will fail.!!!!
+
         # Get active cycle
         cycle = self.active_cycles.get(user_id)
         if not cycle:
@@ -642,4 +642,7 @@ class CycleService:
             self._save_user_cycles(user_id, cycle)
 
         # Get next word to train
+        if not cycle:
+            self.learning_service.mark_cycle_as_completed(user_id)
+            return None
         return self.get_next_word(user_id, word_progress)

@@ -179,21 +179,26 @@ class LearningService:
         return cycle_words
 
     def mark_word_as_learned(
-        self, cycle_id: int, user_word_id: int, time_spent: float
+        self, user_id: int, user_word_id: int, time_spent: float
     ) -> None:
         """Mark a word as learned in the current cycle."""
+
+        learning_cycle = self.get_active_cycle(user_id)
+        if not learning_cycle:
+            raise ValueError(f"No active learning cycle for user {user_id}")
+
         cycle_word = (
             self.db.query(CycleWord)
             .filter(
                 and_(
-                    CycleWord.cycle_id == cycle_id,
                     CycleWord.user_word_id == user_word_id,
+                    CycleWord.cycle_id == learning_cycle.id,
                 )
             )
             .first()
         )
         if not cycle_word:
-            raise ValueError(f"Word {user_word_id} not found in cycle {cycle_id}")
+            raise ValueError(f"Word {user_word_id} not found in cycle {learning_cycle.id}")
 
         # Update cycle word status
         was_learned = cycle_word.is_learned
@@ -253,6 +258,15 @@ class LearningService:
         if not cycle:
             raise ValueError(f"Cycle {cycle_id} not found")
 
+        cycle.is_completed = True
+        cycle.end_time = datetime.now(UTC)
+        self.db.commit()
+
+    def mark_cycle_as_completed(self, user_id: int) -> None:
+        """Mark the active cycle as completed."""
+        cycle = self.get_active_cycle(user_id)
+        if not cycle:
+            raise ValueError(f"No active learning cycle for user {user_id}")
         cycle.is_completed = True
         cycle.end_time = datetime.now(UTC)
         self.db.commit()

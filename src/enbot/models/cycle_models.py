@@ -11,4 +11,3 @@ class WordProgressData:
     current_method: Optional[str]
     last_attempt: Optional[str]  # ISO format datetime string
     attempts: Dict[str, int]  # Method name -> attempt count
-    completed: bool
