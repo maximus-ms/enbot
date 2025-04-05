@@ -79,6 +79,8 @@ def setup_logging(level: Optional[int] = None) -> None:
             print(f"Warning: Could not set up file logging: {e}")
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("faker").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("telegram").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
@@ -111,8 +113,6 @@ def handle_exception(loop, context):
 
 async def main() -> None:
     """Run the bot."""
-    # Ensure all required directories exist
-    ensure_directories()
     
     # Get the event loop
     loop = asyncio.get_event_loop()
@@ -145,6 +145,9 @@ async def main() -> None:
         await bot.stop()
 
 if __name__ == "__main__":
+    # Ensure all required directories exist
+    ensure_directories()
+
     setup_logging()
 
     try:

@@ -20,6 +20,7 @@ DICTIONARIES_DIR = DATA_DIR / "dictionaries"
 MEDIA_DIR = DATA_DIR / "media"
 PRONUNCIATIONS_DIR = MEDIA_DIR / "pronunciations"
 IMAGES_DIR = MEDIA_DIR / "images"
+LOG_DIR = Path(os.getenv("LOG_DIR", "./logs"))
 
 # Learning settings
 REPETITION_INTERVALS = [1, 3, 7, 14, 30]  # days between reviews
@@ -34,6 +35,7 @@ def ensure_directories() -> None:
         MEDIA_DIR,
         PRONUNCIATIONS_DIR,
         IMAGES_DIR,
+        LOG_DIR,
     ]
     
     for directory in directories:
@@ -49,6 +51,7 @@ class PathSettings:
     media_dir: Path = MEDIA_DIR
     pronunciations_dir: Path = PRONUNCIATIONS_DIR
     images_dir: Path = IMAGES_DIR
+    log_dir: Path = LOG_DIR
 
 
 @dataclass
@@ -63,7 +66,7 @@ class LoggingSettings:
     """Logging configuration settings."""
     level: str = os.getenv("LOG_LEVEL", "INFO")
     format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    dir: Optional[str] = os.getenv("LOG_DIR", None)
+    dir: Optional[str] = os.getenv("LOG_DIR", str(LOG_DIR))
     rotation: str = os.getenv("LOG_FILE_ROTATION", "midnight")
     interval: int = int(os.getenv("LOG_FILE_ROTATION_INTERVAL", "1"))
     backup_count: int = int(os.getenv("LOG_FILE_ROTATION_BACKUP_COUNT", "30"))

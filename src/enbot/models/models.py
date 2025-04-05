@@ -48,6 +48,7 @@ class User(Base, TimestampMixin):
     words = relationship("UserWord", back_populates="user")
     learning_cycles = relationship("LearningCycle", back_populates="user")
     logs = relationship("UserLog", back_populates="user")
+    cycles = relationship("UserCycle", back_populates="user", cascade="all, delete-orphan")
 
 
 class Word(Base, TimestampMixin):
@@ -66,6 +67,7 @@ class Word(Base, TimestampMixin):
     # Relationships
     users = relationship("UserWord", back_populates="word")
     examples = relationship("Example", back_populates="word")
+    user_cycles = relationship("UserCycle", back_populates="word", cascade="all, delete-orphan")
 
 
 class UserWord(Base, TimestampMixin):
@@ -150,3 +152,26 @@ class UserLog(Base, TimestampMixin):
 
     # Relationships
     user = relationship("User", back_populates="logs")
+
+
+class UserCycle(Base):
+    """Model for storing user learning cycle data."""
+    __tablename__ = "user_cycles"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    word_id = Column(Integer, ForeignKey("words.id"), nullable=False)
+    required_methods = Column(String, nullable=False)  # JSON string of required methods
+    completed_methods = Column(String, nullable=False)  # JSON string of completed methods
+    current_method = Column(String, nullable=True)  # Current method being used
+    last_attempt = Column(DateTime, nullable=True)  # Last attempt timestamp
+    attempts = Column(String, nullable=False)  # JSON string of attempts per method
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    user = relationship("User", back_populates="cycles")
+    word = relationship("Word", back_populates="user_cycles")
+
+    def __repr__(self):
+        return f"<UserCycle(user_id={self.user_id}, word_id={self.word_id})>"

@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timedelta, UTC
 from typing import List, Optional, Tuple
 import math
+import json
 
 from sqlalchemy import and_, or_, func
 from sqlalchemy.orm import Session
@@ -17,7 +18,9 @@ from enbot.models.models import (
     UserLog,
     UserWord,
     Word,
+    UserCycle,
 )
+from enbot.models.cycle_models import WordProgressData
 
 logger = logging.getLogger(__name__)
 
@@ -206,6 +209,7 @@ class LearningService:
         # Update user word status
         user_word = cycle_word.user_word
         user_word.last_reviewed = datetime.now(UTC)
+        user_word.is_learned = True
         user_word.review_stage += 1
         user_word.next_review = self._calculate_next_review(user_word.review_stage)
 
@@ -228,8 +232,7 @@ class LearningService:
 
         self.db.delete(cycle_word)
         self.db.commit()
-    
-
+ 
     def _calculate_next_review(self, review_stage: int) -> datetime:
         """Calculate the next review date based on the review stage."""
         x = 1
@@ -254,6 +257,10 @@ class LearningService:
         cycle.end_time = datetime.now(UTC)
         self.db.commit()
 
+    def get_word(self, word_id: int) -> Optional[Word]:
+        """Get a word by its ID."""
+        return self.db.query(Word).filter(Word.id == word_id).first()
+
     def log_user_activity(
         self, user_id: int, message: str, level: str, category: str
     ) -> None:
@@ -266,3 +273,112 @@ class LearningService:
         )
         self.db.add(log)
         self.db.commit()
+
+    def get_word_by_id(self, word_id: int) -> Optional[Word]:
+        """Get a word by its ID."""
+        return self.db.query(Word).filter(Word.id == word_id).first()
+
+    def get_users_with_active_cycles(self) -> List[int]:
+        """Get a list of user IDs that have active learning cycles."""
+        # Query users who have active cycles
+        user_ids = self.db.query(UserCycle.user_id).distinct().all()
+        return [user_id for (user_id,) in user_ids]
+
+    def get_user_cycles(self, user_id: int) -> List[WordProgressData]:
+        """Get the active cycles for a user from the database."""
+        # Query cycles for this user
+        cycles = self.db.query(UserCycle).filter(UserCycle.user_id == user_id).all()
+        
+        # Convert to WordProgressData objects
+        result = []
+        for cycle in cycles:
+            try:
+                # Parse JSON strings
+                required_methods = json.loads(cycle.required_methods)
+                completed_methods = json.loads(cycle.completed_methods)
+                attempts = json.loads(cycle.attempts)
+                
+                # Create WordProgressData
+                data = WordProgressData(
+                    word_id=cycle.word_id,
+                    required_methods=required_methods,
+                    completed_methods=completed_methods,
+                    current_method=cycle.current_method,
+                    last_attempt=cycle.last_attempt.isoformat() if cycle.last_attempt else None,
+                    attempts=attempts
+                )
+                result.append(data)
+                logger.debug(f"Cycle data: {data}")
+            except Exception as e:
+                logger.error(f"Error parsing cycle data: {e}")
+        
+        return result
+
+    def save_user_cycles(self, user_id: int, cycles_data: List[WordProgressData]) -> None:
+        """Save the active cycles for a user to the database."""
+        # Delete existing cycles for this user
+        logger.debug(f"Saving cycles for user {user_id}")
+        logger.debug(f"Firstly deleting existing cycles for user {user_id}")
+        self.db.query(UserCycle).filter(UserCycle.user_id == user_id).delete()
+        
+        # Add new cycles
+        for cycle_data in cycles_data:
+            try:
+                # if cycle_data.completed:
+                #     logger.debug(f"Cycle {cycle_data.word_id} is completed, skipping")
+                #     # Mark word as learned
+                #     word = self.db.query(UserWord).filter(UserWord.id == cycle_data.word_id).first()
+                #     if word:
+                #         word.is_learned = True
+                #     # Mark cycle as completed
+                #     cycle = self.db.query(CycleWord).filter(CycleWord.id == cycle_data.cycle_id).first()
+                #     if cycle:
+                #         cycle.is_completed = True
+                #     continue
+
+                # Convert to JSON strings
+                required_methods_json = json.dumps(cycle_data.required_methods)
+                completed_methods_json = json.dumps(cycle_data.completed_methods)
+                attempts_json = json.dumps(cycle_data.attempts)
+                
+                # Create UserCycle object
+                cycle = UserCycle(
+                    user_id=user_id,
+                    word_id=cycle_data.word_id,
+                    required_methods=required_methods_json,
+                    completed_methods=completed_methods_json,
+                    current_method=cycle_data.current_method,
+                    last_attempt=datetime.fromisoformat(cycle_data.last_attempt) if cycle_data.last_attempt else None,
+                    attempts=attempts_json
+                )
+                
+                # Add to session
+                self.db.add(cycle)
+            except Exception as e:
+                logger.error(f"Error saving cycle data: {e}")
+        
+        # Commit changes
+        self.db.commit()
+
+    def delete_user_cycles(self, user_id: int, cycles: Optional[List[WordProgressData]] = None) -> None:
+        """Delete cycles for a specific user from the database.
+        
+        Args:
+            user_id: The ID of the user whose cycles should be deleted.
+            cycles: Optional list of specific cycles to delete. If None, all cycles for the user will be deleted.
+        """
+        try:
+            query = self.db.query(UserCycle).filter(UserCycle.user_id == user_id)
+            if cycles is not None:
+                # Delete specific cycles
+                word_ids = [cycle.word_id for cycle in cycles]
+                query = query.filter(UserCycle.word_id.in_(word_ids))
+            
+            # Execute deletion
+            deleted_count = query.delete()
+            self.db.commit()
+            logger.debug(f"Deleted {deleted_count} cycles for user {user_id} from database")
+        except Exception as e:
+            logger.error(f"Error deleting cycles for user {user_id}: {e}")
+            self.db.rollback()
+            raise

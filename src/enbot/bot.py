@@ -26,6 +26,13 @@ from enbot.config import settings
 from enbot.models.base import SessionLocal
 from enbot.models.models import User, UserWord, CycleWord
 from enbot.services.learning_service import LearningService
+from enbot.services.cycle_service import (
+    CycleService,
+    UserAction,
+    TrainingRequest,
+    UserResponse,
+    RawResponse
+)
 from enbot.services.user_service import UserService
 from enbot.services.word_service import WordService
 from sqlalchemy import and_
@@ -34,7 +41,7 @@ from sqlalchemy import and_
 logger = logging.getLogger(__name__)
 
 # Conversation states
-MAIN_MENU, ADDING_WORDS = range(2)
+MAIN_MENU, ADDING_WORDS, LEARNING = range(3)
 
 # Button texts
 MENU = "🏠 Menu"
@@ -158,7 +165,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     return MAIN_MENU
 
 
-async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_learning(update: Update, context: CallbackContext) -> int:
     """Start a new learning cycle."""
     user = get_user_from_update(update)
     if not user: 
@@ -167,45 +174,134 @@ async def start_learning(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     db = SessionLocal()
     try:
-        user_service = UserService(db)
+        cycle_service = CycleService(LearningService(db))
 
-        learning_service = LearningService(db)
-        words, cycle = learning_service.get_words_for_cycle_or_create(user.id)
-        logger.info(f"User {user.id} has {len(words)} words for learning")
-        if not words:
+        # Get next word to learn
+        request = cycle_service.get_next_word(user.id)
+        if not request:
             await update.callback_query.edit_message_text(
-                "No words available for learning. Add some words first!",
+                "No words available for learning.\n"
+                "Add some words first!",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
-                    InlineKeyboardButton("📝 Add Words", callback_data="add_words")],
+                     InlineKeyboardButton(ADD_NEW_WORDS, callback_data="add_words")],
                 ]),
             )
             return MAIN_MENU
 
-        word = random.choice(words).word
-        example = word.examples[0] if word.examples else None
+        # Store current request in context for later use
+        context.user_data['current_request'] = request
 
-        # Show the first word
-        keyboard = [[
-            InlineKeyboardButton("🤷‍♂️ I don't know", callback_data=f"learning_response_dontknow_{word.id}"),
-            InlineKeyboardButton("❌ Don't learn", callback_data=f"learning_response_dontlearn_{word.id}"),    
-            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}")],
-            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Send the training request
+        await send_training_request(update, request)
+        return LEARNING
 
-        message = (f"Let's learn some words!\n\n"
-                   f"Word: {word.text}\n"
-                   f"Translation: {word.translation}")
-        
-        if example: message += f"\nExample: {example.sentence}"
-
-        await update.callback_query.edit_message_text(
-            message,
-            reply_markup=reply_markup,
-        )
-        
     finally:
         db.close()
+
+
+async def handle_learning_response(update: Update, context: CallbackContext) -> int:
+    """Handle user's response during learning."""
+    user = get_user_from_update(update)
+    if not user:
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+
+    await log_received(update, "learn")
+
+    db = SessionLocal()
+    try:
+        # Get current request from context
+        current_request = context.user_data.get('current_request')
+        if not current_request:
+            logger.debug("No current request, starting new learning cycle")
+            return await handle_start(update, context)
+
+        # Parse response
+        response = parse_user_response(update, current_request)
+        if not response:
+            return LEARNING
+
+        logger.debug(f"Received response: {response}")
+
+        # Process response
+        cycle_service = CycleService(LearningService(db))
+        next_request = cycle_service.process_response_and_get_next_request(user.id, response)
+
+        if next_request:
+            # Store new request and send it
+            context.user_data['current_request'] = next_request
+            await send_training_request(update, next_request)
+            return LEARNING
+        else:
+            # Learning cycle completed
+            await update.callback_query.edit_message_text(
+                "Great job! You've completed this learning cycle.\n"
+                "Would you like to start a new one?",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("💡 Start New Cycle", callback_data="start_learning")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+                ]),
+            )
+            return MAIN_MENU
+
+    finally:
+        db.close()
+
+
+async def send_training_request(update: Update, request: TrainingRequest) -> None:
+    """Send a training request to the user."""
+    # Create keyboard from buttons
+    keyboard = []
+    for button in request.buttons:
+        keyboard.append([InlineKeyboardButton(button["text"], callback_data=button["callback_data"])])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Send message
+    if update.callback_query:
+        await update.callback_query.edit_message_text(request.message, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(request.message, reply_markup=reply_markup)
+
+
+def parse_user_response(update: Update, request: TrainingRequest) -> Optional[RawResponse]:
+    """Parse user's response into a UserResponse object."""
+    
+    raw_response = RawResponse(
+        request=request,
+    )
+
+    if update.callback_query:
+        # Handle callback query
+        raw_response.text = update.callback_query.data
+        # Check if this is a cycle-related callback
+        if not raw_response.text.startswith(CycleService.CALLBACK_PREFIX):
+            logger.debug(f"Received unknown callback prefix: {raw_response.text}")
+            return None
+        
+        return raw_response
+            
+        # # Remove prefix and split the rest
+        # data = data[len(CycleService.CALLBACK_PREFIX):]
+        # action, word_id = data.split('_', 1)
+        
+        # if action == "know":
+        #     return UserResponse(UserAction.MARK_LEARNED, int(word_id))
+        # elif action == "dont_know":
+        #     return UserResponse(UserAction.SKIP, int(word_id))
+        # elif action == "back":
+        #     return UserResponse(UserAction.SKIP, int(word_id))
+        # elif action.startswith("answer_"):
+        #     _, word_id, answer_index = data.split('_')
+        #     answer = request.additional_data["options"][int(answer_index) - 1]
+        #     return UserResponse(UserAction.ANSWER, int(word_id), answer=answer)
+    else:
+        # Handle text message
+        if request.expects_text:
+            raw_response.text = update.message.text
+            return raw_response
+    
+    return None
 
 
 async def add_words(update: Update, context: CallbackContext) -> int:
@@ -407,105 +503,6 @@ async def handle_language_selection(update: Update, context: CallbackContext) ->
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
             ]),
-        )
-        
-    finally:
-        db.close()
-
-    return MAIN_MENU
-
-
-async def handle_learning_response(update: Update, context: CallbackContext) -> None:
-    """Handle user's response to a word (know/don't know)."""
-
-    user = get_user_from_update(update)
-    if not user: 
-        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
-        return MAIN_MENU
-
-    db = SessionLocal()
-    try:
-        learning_service = LearningService(db)
-        #learning_response_dontknow_123
-        _, _, action, word_id = update.callback_query.data.split("_")
-        polarity = not "dont" in action
-        action = action.replace("dont", "").strip()
-         
-        # Get the current cycle
-        words, cycle = learning_service.get_words_for_cycle(user.id)
-        if not words:
-            await update.callback_query.edit_message_text(
-                "No active learning cycle found. Please start learning again.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(START_LEARNING, callback_data="start_learning")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
-                ]),
-            )
-            return
-
-        word = None
-        word_ix = None
-        for ix, w in enumerate(words):
-            if w.id == int(word_id):
-                word = w
-                word_ix = ix
-                break
-
-        if not word:
-            await update.callback_query.edit_message_text(
-                "Error: Word not found in current learning cycle.",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(START_LEARNING, callback_data="start_learning")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
-                ]),
-            )
-            return
-
-        # Mark the word as learned if user knows it
-        if polarity and action == "know":
-            learning_service.mark_word_as_learned(cycle.id, word.id, 0.0)  # Time spent is 0 for now
-            words.pop(word_ix)
-        elif not polarity and action == "learn":
-            learning_service.remove_word_from_cycle(cycle.id, word.id)
-            user_service = UserService(db)
-            user_service.delete_user_word(user.id, word.id)
-            words.pop(word_ix)
-            
-        if not words:
-            # No more words, complete the cycle
-            learning_service.complete_cycle(cycle.id)
-            await update.callback_query.edit_message_text(
-                "🎉 Congratulations! You've completed this learning cycle!\n"
-                "Would you like to start another one?",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Start New Cycle", callback_data="start_learning")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
-                ]),
-            )
-            return
-
-        # Show the next word
-        word = random.choice(words).word
-        example = word.examples[0] if word.examples else None
-
-        keyboard = [
-            [InlineKeyboardButton("🤷‍♂️ I don't know", callback_data=f"learning_response_dontknow_{word.id}"),
-            InlineKeyboardButton("❌ Don't learn", callback_data=f"learning_response_dontlearn_{word.id}"),    
-            InlineKeyboardButton("✅ I know this", callback_data=f"learning_response_know_{word.id}")],
-            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
-        ]
-
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        message = (f"Let's continue learning!\n\n"
-                   f"Word: {word.text}\n"
-                   f"Translation: {word.translation}")
-        
-        if example: message += f"\nExample: {example.sentence}"
-
-        await update.callback_query.edit_message_text(
-            message,
-            reply_markup=reply_markup,
         )
         
     finally:
@@ -795,6 +792,9 @@ def main() -> None:
             ],
             ADDING_WORDS: [
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_words),
+            ],
+            LEARNING: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_learning_response),
             ],
         },
         fallbacks=[CommandHandler("start", handle_start)],

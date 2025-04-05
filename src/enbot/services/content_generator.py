@@ -135,20 +135,21 @@ class ContentGenerator:
     @staticmethod
     def generate_examples(word: str, target_lang: str, native_lang: str, count: int = 3) -> List[Example]:
         """Generate example sentences for a word."""
-        examples = []
+        sentences_examples = []
         sentences = []
         synsets = wordnet.synsets(word)
         try:
             if synsets:
                 syn = synsets[0]
-                examples = syn.examples()
-            if examples:
-                sentences = random.sample(examples, min(count, len(examples)))
+                sentences_examples = syn.examples()
+            if sentences_examples:
+                sentences = random.sample(sentences_examples, min(count, len(sentences_examples)))
         except Exception as e:
             logger.error(f"Error generating examples for word: {word}, error: {e}")
 
         if not sentences: return []
 
+        examples = []
         for sentence in sentences:
             try:
                 example = Example(
@@ -157,10 +158,11 @@ class ContentGenerator:
                     is_good=True,
                 )
                 examples.append(example)
-                logger.info(f"Example generated for word: {word}, example: {sentence}")
+                logger.info(f"Example generated for word: {word}, example: {examples}")
             except Exception as e:
                 logger.error(f"Error generating example for word: {word}, error: {e}")
                 continue
+        logger.debug(f"Examples generated for word: {word}, examples: {examples}")
         return examples
 
     @classmethod

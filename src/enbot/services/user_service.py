@@ -258,15 +258,7 @@ class UserService:
                         if priority > existing_user_word.priority+1:
                             append_this_word = True
                     if translation is not None:
-                        if existing_user_word.translation != translation:
-                            existing_user_word.translation = translation
-                            self.log_user_activity(
-                                user_id,
-                                f"Word translation updated: {word_text} - {translation}",
-                                "INFO",
-                                "word_translation_updated",
-                            )
-                            append_this_word = True
+                        logger.warning(f"Adding existing word. The translation will be ignored: {translation}")
                     if append_this_word:
                         added_words.append(existing_user_word)
                     continue
@@ -294,6 +286,7 @@ class UserService:
 
                 # Add examples
                 for example in examples:
+                    logger.debug(f"Adding example: {example}")
                     example.word_id = word_obj.id
                     self.db.add(example)
                 self.db.commit()

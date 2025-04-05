@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import signal
+import sys
 from typing import Optional
 from warnings import filterwarnings
 from telegram.warnings import PTBUserWarning
@@ -27,8 +28,10 @@ from enbot.bot import (
     handle_callback,
     handle_message,
     handle_add_words,
+    handle_learning_response,
     MAIN_MENU,
     ADDING_WORDS,
+    LEARNING,
 )
 
 
@@ -69,6 +72,10 @@ class EnBot:
                     ADDING_WORDS: [
                         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_add_words),
                         CallbackQueryHandler(handle_callback),
+                    ],
+                    LEARNING: [
+                        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_learning_response),
+                        CallbackQueryHandler(handle_learning_response),
                     ],
                 },
                 fallbacks=[CommandHandler("start", handle_start)],
@@ -139,9 +146,28 @@ class EnBot:
 
         # Handle signals
         def signal_handler(signum, frame):
-            print()  # Print newline before logging
-            self.logger.info("Received signal %d", signum)
-            loop.stop()
+            """Handle signals like SIGINT (Ctrl+C)."""
+            print()  # Print a newline to ensure log messages start on a new line
+            self.logger.info(f"Received signal {signum}. Shutting down...")
+            
+            # Save cycle service state
+            from enbot.services.cycle_service import CycleService
+            from enbot.services.learning_service import LearningService
+            from enbot.database import SessionLocal
+            
+            db = SessionLocal()
+            try:
+                learning_service = LearningService(db)
+                cycle_service = CycleService(learning_service)
+                cycle_service.save_state()
+                self.logger.info("Cycle service state saved successfully")
+            except Exception as e:
+                self.logger.error(f"Error saving cycle service state: {e}")
+            finally:
+                db.close()
+            
+            # Exit gracefully
+            sys.exit(0)
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)

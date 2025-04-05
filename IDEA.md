@@ -102,3 +102,16 @@ Gamification - not sure, not now. maybe later.
 - admin user can ask EnBot a statistic of DBs memory size, etc.
 4.No backup mechanism in this project. all data should be in a dir, so backup can be done manually by coping this entire dir.
 5. Admin user can act as a regular user to learn words, and can switch to admin mode to ask as admin and switch back to user mode.
+
+
+currently we have bot.py and leraning_service.py.
+we need one addidional layer in between.
+let's say cycle_service or similar.
+ - this service should provide an algorithm and strategy of training words.
+ - cycle_service should get a list of words to cycle (to train) from learning_service.
+ - cycle_servise should select one word to train, select the method to traing (there should be a list of different methods (everyone is a dedicated python class): just remember, gues the correct translation from provied options, type the correct word by translation, etc).
+ - cycle_servise should provide to bot.py a message, a list of buttons (with text on buttons and values for responce), other parametes if needed (if expect txt message as responce), etc. - request-class.
+ - the bot.py should convert all information from  cycle_servise into telegram API messages, send it, and receive the user's responce.
+ - the bot.py should parse the user's responce, pack it in formalized class and send it to cycle_servise.
+ - cycle_servise takes the responce-class from user, checks if the user was correct and acts accordingly (choose the next word, etc.)
+ - the responce-class should have flags for cases if user decided to ask more info about the word (send prononsiation, to see examples, pictures, etc) or to decided not to learn this word, or mark it as already learned, or delete it from learning list at all (from user dict).
