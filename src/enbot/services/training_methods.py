@@ -1,7 +1,7 @@
 """Training methods for word learning."""
 import logging
 from abc import ABC, abstractmethod
-from typing import final
+from typing import final, List, Dict
 from enum import Enum
 from enbot.models.training_models import TrainingRequest, RawResponse, UserResponse, UserAction
 from enbot.models.models import Word
@@ -45,7 +45,7 @@ class BaseTrainingMethod(ABC):
         raise NotImplementedError("Subclasses must implement this method")
     
     @abstractmethod
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
+    def _parse_response(self, callback_data: str, raw_response: RawResponse) -> UserResponse:
         """Internal method to parse response. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement this method")
     
@@ -63,15 +63,52 @@ class BaseTrainingMethod(ABC):
         self.callback_prefix = BaseTrainingMethod.CALLBACK_PREFIX
     
     @final
-    def create_request(self, word: Word) -> TrainingRequest:
+    def _add_callback_prefix_to_list_of_buttons(self, buttons: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        for button in buttons:
+            if isinstance(button, list):
+                self._add_callback_prefix_to_list_of_buttons(button)
+            else:
+                button["callback_data"] = f"{self.callback_prefix}{button["callback_data"]}"
+        return buttons
+    
+    @final
+    def create_request(self, word: Word, extra_actions: List[UserAction] = []) -> TrainingRequest:
         """Create a training request for this method."""
-        return self._create_request(word)
+        request = self._create_request(word)
+        request.buttons.append([
+            # {"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"},
+            {"text": "❌ Don't learn", "callback_data": f"baseknownot"},
+            {"text": "🔊 Pronounce",   "callback_data": f"basekpronounce"},
+            {"text": "📝 Examples",    "callback_data": f"basekexamples"},
+            {"text": "✅ I know it",   "callback_data": f"baseknown"},
+        ])
+        for action in extra_actions:
+            if action == UserAction.PRONOUNCE:
+                request.message += f"\n\n🔊 Pronounce the word: {word.pronunciation_file}"
+            elif action == UserAction.SHOW_EXAMPLES:
+                request.message += "\n\n📝 Examples:"
+                for example in word.examples:
+                    request.message += f"\n{example.sentence} - {example.translation}"
+        request.buttons = self._add_callback_prefix_to_list_of_buttons(request.buttons)
+        return request
     
     @final
     def parse_response(self, raw_response: RawResponse) -> UserResponse:
         """Parse user's response and determine if it's correct."""
-        return self._parse_response(raw_response)
-    
+        callback_data = raw_response.text[len(self.callback_prefix):]
+        action = callback_data.split("_", 1)[0]
+        
+        if action.startswith("baseknow"):
+            response = UserResponse(raw_response.request.word.id)
+            response.action = UserAction.SKIP if "not" in action else UserAction.MARK_LEARNED
+            return response
+        elif action.startswith("basekpronounce"):
+            return UserResponse(raw_response.request.word.id, UserAction.PRONOUNCE)
+        elif action.startswith("basekexamples"):
+            return UserResponse(raw_response.request.word.id, UserAction.SHOW_EXAMPLES)
+        else:
+            return self._parse_response(callback_data, raw_response)
+
     @final  
     def get_method_name(self) -> str:
         """Get the TrainingMethod enum value for this method."""
@@ -99,33 +136,28 @@ class RememberMethodBase(BaseTrainingMethod):
             word=word,
             message=self._get_message(word),
             buttons=[
-                {"text": "✅ Yes", "callback_data": f"{self.callback_prefix}know_{word.id}"},
-                {"text": "❌ No", "callback_data": f"{self.callback_prefix}dont_know_{word.id}"},
-                # {"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}
+                [{"text": "❌ Learn more", "callback_data": UserAction.ANSWER_NO.value},
+                 {"text": "✅ Learned",    "callback_data": UserAction.ANSWER_YES.value}],
             ]
         )
     
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        callback_data = raw_response.text[len(self.callback_prefix):]
-        if callback_data.startswith("know_"):
-            return UserResponse(UserAction.MARK_LEARNED, raw_response.request.word.id)
-        elif callback_data.startswith("dont_know_"):
-            return UserResponse(UserAction.SKIP, raw_response.request.word.id)
-        return None
+    def _parse_response(self, callback_data: str, raw_response: RawResponse) -> UserResponse:
+        if not callback_data.startswith("answer"): return None
+        return UserResponse(raw_response.request.word.id, UserAction(callback_data))
 
 
 class RememberMethod(RememberMethodBase):
     type: TrainingMethod = TrainingMethod.REMEMBER
     
     def _get_message(self, word: Word) -> str:
-        return f"Do you know this word2?\n\n{word.text} - {word.translation}"
+        return f"Do you know this word (METHOD1)?\n\n{word.text} - {word.translation}"
 
 
 class Remember2Method(RememberMethodBase):
     type: TrainingMethod = TrainingMethod.REMEMBER2
     
     def _get_message(self, word: Word) -> str:
-        return f"Do you know this word?\n\n{word.text} - {word.translation}"
+        return f"Do you know this word (METHOD2)?\n\n{word.text} - {word.translation}"
 
 
 class MultipleChoiceMethod(BaseTrainingMethod):

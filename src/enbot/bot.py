@@ -1,8 +1,8 @@
 """Main Telegram bot module."""
 import logging
 import random
+from typing import Optional, List, Dict
 from datetime import datetime
-from typing import Optional
 
 from telegram import (
     InlineKeyboardButton,
@@ -252,9 +252,16 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
 async def send_training_request(update: Update, request: TrainingRequest) -> None:
     """Send a training request to the user."""
     # Create keyboard from buttons
-    keyboard = []
-    for button in request.buttons:
-        keyboard.append([InlineKeyboardButton(button["text"], callback_data=button["callback_data"])])
+
+    def prepare_buttons(buttons: List[Dict[str, str]]) -> List[List[InlineKeyboardButton]]:
+        keyboard = []
+        logger.debug(f"Preparing buttons: {buttons}")
+        for button in buttons:
+            if isinstance(button, list): keyboard.append(prepare_buttons(button))
+            else: keyboard.append(InlineKeyboardButton(button["text"], callback_data=button["callback_data"]))
+        return keyboard
+
+    keyboard = prepare_buttons(request.buttons)
     keyboard.append([InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 

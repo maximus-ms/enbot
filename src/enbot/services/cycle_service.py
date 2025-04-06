@@ -84,7 +84,7 @@ class WordProgress:
             self.completed_methods.add(method)
         else:
             self.completed_methods = self.required_methods
-        self.current_method = None
+        # self.current_method = None
 
     def record_attempt(self, method: TrainingMethod, success: bool) -> None:
         """Record an attempt at a method."""
@@ -332,7 +332,7 @@ class CycleService:
         logger.debug(f"No incomplete methods for user {user_id}")
         return None
 
-    def _create_training_request(self, progress: WordProgress) -> TrainingRequest:
+    def _create_training_request(self, progress: WordProgress, extra_actions: List[UserAction] = []) -> TrainingRequest:
         """Create a training request for a specific method."""
         logger.debug(f"Creating training request for method: {progress.current_method}, progress: {progress}")
         # Find the appropriate method class
@@ -341,7 +341,7 @@ class CycleService:
             logger.error(f"Unknown training method: {progress.current_method}")
             raise ValueError(f"Unknown training method: {progress.current_method}")
             
-        return method_class(self.learning_service).create_request(progress.word)
+        return method_class(self.learning_service).create_request(progress.word, extra_actions)
 
     def process_response_and_get_next_request(self, user_id: int, raw_response: RawResponse) -> Optional[TrainingRequest]:
         """Process user's response and return next training request if any."""
@@ -365,15 +365,33 @@ class CycleService:
             return None
         
         word_progress.current_method = method_entity.type
-
+        use_the_same_word_and_method = False
+        extra_actions = []
         # Process the response based on action
         if response.action == UserAction.MARK_LEARNED:
-            logger.debug(f"Marking word {word_progress.word.id} as learned by method {word_progress.current_method}")
+            logger.debug(f"Marking word {word_progress.word.id} as learned in total")
             word_progress.mark_completed()
         elif response.action == UserAction.SKIP:
+            logger.debug(f"Skipping word {word_progress.word.id} for now")
+        elif response.action == UserAction.ANSWER_YES:
+            logger.debug(f"Marking word {word_progress.word.id} as learned by method {word_progress.current_method}")
+            word_progress.record_attempt(word_progress.current_method, True)
+        elif response.action == UserAction.ANSWER_NO:
             logger.debug(f"Skipping word {word_progress.word.id} for now, method {word_progress.current_method}")
-            # Skip current method but don't mark as completed
-            # word_progress.current_method = None
+            word_progress.record_attempt(word_progress.current_method, False)
+        elif response.action == UserAction.PRONOUNCE:
+            logger.debug(f"Pronouncing word {word_progress.word.id}")
+            word_progress.record_attempt(word_progress.current_method, False)
+            use_the_same_word_and_method = True
+            extra_actions.append(UserAction.PRONOUNCE)
+        elif response.action == UserAction.SHOW_EXAMPLES:
+            logger.debug(f"Showing examples for word {word_progress.word.id}")
+            word_progress.record_attempt(word_progress.current_method, False)
+            use_the_same_word_and_method = True
+            extra_actions.append(UserAction.SHOW_EXAMPLES)
+        else:
+            logger.debug(f"Unknown action: {response.action}")
+
         # elif response.action == UserAction.ANSWER:
         #     # Find the appropriate method class
         #     method_entity = next((m for m in self.training_methods if m.type == word_progress.current_method), None)
@@ -393,9 +411,16 @@ class CycleService:
             cycle.remove(word_progress)
             # Save the updated cycles
             self._save_user_cycles(user_id, cycle)
+        else:
+            logger.debug(f"Word {word_progress.word.id} is not complete, noncomplete methods: {word_progress.required_methods - word_progress.completed_methods}")
+            self._save_user_cycles(user_id, cycle)
 
         # Get next word to train
         if not cycle:
             self.learning_service.mark_cycle_as_completed(user_id)
             return None
-        return self.get_next_word(user_id, word_progress)
+        
+        if use_the_same_word_and_method:
+            return self._create_training_request(word_progress, extra_actions)
+        else:
+            return self.get_next_word(user_id, word_progress)
