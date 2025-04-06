@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import List, Dict, Optional, Any, Set, Type, ClassVar
+from typing import List, Dict, Optional, Any, Set, Type, ClassVar, final
 import threading
 from abc import ABC, abstractmethod
 
@@ -77,7 +77,8 @@ def get_all_subclasses(cls):
 
 class BaseTrainingMethod:
     """Base class for all training methods."""
-    
+    type: TrainingMethod = TrainingMethod.BASE
+    priority: int = 0
     def __init__(self, learning_service: LearningService):
         self.learning_service = learning_service
         self.callback_prefix = CycleService.CALLBACK_PREFIX
@@ -87,42 +88,50 @@ class BaseTrainingMethod:
         """Determine if this method should be used for the given word."""
         return False
     
+    @final
     def create_request(self, word: Word) -> TrainingRequest:
         """Create a training request for this method."""
+        return self._create_request(word)
+    
+    @abstractmethod
+    def _create_request(self, word: Word) -> TrainingRequest:
+        """Internal method to create a training request. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement this method")
     
+    @final
     def parse_response(self, raw_response: RawResponse) -> UserResponse:
         """Parse user's response and determine if it's correct."""
+        return self._parse_response(raw_response)
+    
+    @abstractmethod
+    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
+        """Internal method to parse response. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement this method")
     
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
+    @final  
+    def get_method_name(self) -> str:
         """Get the TrainingMethod enum value for this method."""
-        return TrainingMethod.BASE
-
-    @classmethod
-    def get_method_name(cls) -> str:
-        """Get the TrainingMethod enum value for this method."""
-        return cls.get_method_type().value
-
-    @classmethod
-    def get_priority(cls) -> int:
-        """Get the priority for this method."""
-        return 0
+        return self.type.value
 
 
 class RememberMethodBase(BaseTrainingMethod):
     """Simple method to remember the word."""
-    
+    priority: int = 1
+
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
         """This method can be used for any word."""
         return True
     
-    def create_request(self, word: Word) -> TrainingRequest:
+    @abstractmethod
+    def _get_message(self, word: Word) -> str:
+        """Internal method to get the message for this method. Must be implemented by subclasses."""
+        raise NotImplementedError("Subclasses must implement this method")
+
+    def _create_request(self, word: Word) -> TrainingRequest:
         logger.debug(f"RememberMethod: Creating training request for word: {word}")
         return TrainingRequest(
-            method=self.get_method_type(),
+            method=self.type,
             word=word,
             message=self._get_message(word),
             buttons=[
@@ -132,7 +141,7 @@ class RememberMethodBase(BaseTrainingMethod):
             ]
         )
     
-    def parse_response(self, raw_response: RawResponse) -> UserResponse:
+    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
         callback_data = raw_response.text[len(self.callback_prefix):]
         if callback_data.startswith("know_"):
             return UserResponse(UserAction.MARK_LEARNED, raw_response.request.word.id)
@@ -140,24 +149,16 @@ class RememberMethodBase(BaseTrainingMethod):
             return UserResponse(UserAction.SKIP, raw_response.request.word.id)
         return None
 
-    @classmethod
-    def get_priority(cls) -> int:
-        return 1
-
 
 class RememberMethod(RememberMethodBase):
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
-        return TrainingMethod.REMEMBER
+    type: TrainingMethod = TrainingMethod.REMEMBER
     
     def _get_message(self, word: Word) -> str:
         return f"Do you know this word2?\n\n{word.text} - {word.translation}"
 
 
 class Remember2Method(RememberMethodBase):
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
-        return TrainingMethod.REMEMBER2
+    type: TrainingMethod = TrainingMethod.REMEMBER2
     
     def _get_message(self, word: Word) -> str:
         return f"Do you know this word?\n\n{word.text} - {word.translation}"
@@ -165,13 +166,15 @@ class Remember2Method(RememberMethodBase):
 
 class MultipleChoiceMethod(BaseTrainingMethod):
     """Method with multiple choice options."""
-    
+    priority: int = 2
+    type: TrainingMethod = TrainingMethod.MULTIPLE_CHOICE
+
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
         """This method can be used for any word."""
         return True
     
-    def create_request(self, word: Word) -> TrainingRequest:
+    def _create_request(self, word: Word) -> TrainingRequest:
         # Create multiple choice options
         options = [word.translation]  # Correct answer
         # Add 3 random wrong options
@@ -180,7 +183,7 @@ class MultipleChoiceMethod(BaseTrainingMethod):
         random.shuffle(options)
         
         return TrainingRequest(
-            method=self.get_method_type(),
+            method=self.type,
             word=word,
             message=f"Choose the correct translation for:\n\n{word.text}",
             buttons=[
@@ -190,64 +193,52 @@ class MultipleChoiceMethod(BaseTrainingMethod):
             additional_data={"options": options}
         )
     
-    def parse_response(self, raw_response: RawResponse) -> bool:
+    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
         if not raw_response.text:
             return False
         correct_answer = raw_response.request.word.translation
-        return raw_response.text == correct_answer
-    
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
-        return TrainingMethod.MULTIPLE_CHOICE
-
-    @classmethod
-    def get_priority(cls) -> int:
-        return 2
+        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text == correct_answer)
 
 
 class SpellingMethod(BaseTrainingMethod):
     """Method where user needs to spell the word."""
-    
+    priority: int = 3
+    type: TrainingMethod = TrainingMethod.SPELLING
+
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
         """Use for longer words."""
         return len(word.text) > 6
     
-    def create_request(self, word: Word) -> TrainingRequest:
+    def _create_request(self, word: Word) -> TrainingRequest:
         return TrainingRequest(
-            method=self.get_method_type(),
+            method=self.type,
             word=word,
             message=f"Type the word for this translation:\n\n{word.translation}",
             buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
             expects_text=True
         )
     
-    def parse_response(self, raw_response: RawResponse) -> bool:
+    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
         if not raw_response.text:
             return False
-        return raw_response.text.lower() == raw_response.request.word.text.lower()
-    
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
-        return TrainingMethod.SPELLING
-
-    @classmethod
-    def get_priority(cls) -> int:
-        return 3
+        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text.lower() == raw_response.request.word.text.lower())
 
 
 class TranslationMethod(BaseTrainingMethod):
     """Method where user needs to translate a sentence."""
-    
+    priority: int = 4
+    type: TrainingMethod = TrainingMethod.TRANSLATION
+
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
         """Use for words with examples."""
         return bool(word.examples)
     
-    def create_request(self, word: Word) -> TrainingRequest:
+    def _create_request(self, word: Word) -> TrainingRequest:
         example = random.choice(word.examples)
         return TrainingRequest(
-            method=self.get_method_type(),
+            method=self.type,
             word=word,
             message=f"Translate this sentence:\n\n{example.sentence}",
             buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
@@ -255,19 +246,11 @@ class TranslationMethod(BaseTrainingMethod):
             additional_data={"example": example}
         )
     
-    def parse_response(self, raw_response: RawResponse) -> bool:
+    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
         if not raw_response.text:
             return False
         # Simple check for now - could be more sophisticated
-        return raw_response.text.lower() in raw_response.request.word.translation.lower()
-    
-    @classmethod
-    def get_method_type(cls) -> TrainingMethod:
-        return TrainingMethod.TRANSLATION
-
-    @classmethod
-    def get_priority(cls) -> int:
-        return 4
+        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text.lower() in raw_response.request.word.translation.lower())
 
 
 class WordProgress:
@@ -288,9 +271,9 @@ class WordProgress:
                 logger.debug(f"All subclasses: {all_subclasses}")
                 for method_class in all_subclasses:
                     logger.debug(f"Method class: {method_class.__name__}")
-                    logger.debug(f"Method type: {method_class.get_method_type()}")
-                    logger.debug(f"Method priority: {method_class.get_priority()}")
-                    WordProgress.method_priority_map[method_class.get_method_type()] = method_class.get_priority()
+                    logger.debug(f"Method type: {method_class.type}")
+                    logger.debug(f"Method priority: {method_class.priority}")
+                    WordProgress.method_priority_map[method_class.type] = method_class.priority
             except Exception as e:
                 logger.error(f"Error getting method priority map: {e}")
 
@@ -300,23 +283,29 @@ class WordProgress:
 
     def get_next_method(self, last_word_in_cycle: bool, previous_method: Optional[TrainingMethod] = None) -> Optional[TrainingMethod]:
         """Get the next method to try, prioritizing incomplete methods."""
+        logger.debug(f"Getting next method for word {self.word.id}, last_word_in_cycle: {last_word_in_cycle}, previous_method: {previous_method}")
         self.current_method = None
-        incomplete = self.required_methods - self.completed_methods
-        if not incomplete:
-            return None
-        
         if last_word_in_cycle and len(self.required_methods) == 1:
             logger.error("Last word in cycle and only one method required")
             return None
+
+        incomplete = self.required_methods - self.completed_methods
+        if not incomplete:
+            return None
+
+        logger.debug(f"Incomplete methods0: {incomplete}")
+        incomplete -= set([previous_method])
+        logger.debug(f"Incomplete methods1: {incomplete}")
         
+        if not incomplete:
+            incomplete = self.completed_methods
+        logger.debug(f"Incomplete methods3: {incomplete}")
+
         # Sort methods by attempts and priority
         new_methods = sorted(incomplete, key=lambda m: (self.attempts[m], WordProgress.method_priority_map[m]))[:2]
+        logger.debug(f"New methods: {new_methods}")
         new_method = random.choice(new_methods)
-        if last_word_in_cycle and previous_method == new_method:
-            # If the previous method was the same as the new method, add a random completed method
-            new_methods.append(random.choice(self.completed_methods))
-            while previous_method == new_method:
-                new_method = random.choice(new_methods)
+        logger.debug(f"New method:  {new_method}")
         self.current_method = new_method
         return new_method
 
@@ -391,8 +380,8 @@ class CycleService:
             try:
                 all_subclasses = get_all_subclasses(BaseTrainingMethod)
                 for method_class in all_subclasses:
-                    if method_class.get_method_type() in self.methods_blacklist: continue
-                    self.methods[method_class.get_method_type()] = method_class
+                    if method_class.type in self.methods_blacklist: continue
+                    self.methods[method_class.type] = method_class
             except Exception as e:
                 logger.error(f"Error getting method classes: {e}")
 
@@ -525,7 +514,7 @@ class CycleService:
         # Check each method to see if it should be used for this word
         for method_class in self.methods.values():
             if method_class.should_be_used_for_word(word):
-                required_methods.add(method_class.get_method_type())
+                required_methods.add(method_class.type)
                 
         return required_methods
 
@@ -536,9 +525,7 @@ class CycleService:
 
     def get_next_word(self, user_id: int, previous_progress: WordProgress = None) -> Optional[TrainingRequest]:
         """Get the next word to train for a user."""
-        
-        # TODO: if previous_progress is the last, get different action!!!! in case we send the same word with the same method again Telegram will fail.!!!!
-
+        logger.debug(f"Getting next word for user {user_id}, previous_progress: {previous_progress}")
         # Get active cycle
         cycle = self.active_cycles.get(user_id)
         if not cycle:
@@ -548,29 +535,31 @@ class CycleService:
                 self._create_word_progress(word.word) for word in words
             ]
             self.active_cycles[user_id] = cycle
+            if not cycle:
+                logger.debug(f"No active cycles for user {user_id}")
+                return None
+            else:
+                logger.debug(f"Cycle created for user {user_id}: {cycle}")
             # Save the new cycles
             self._save_user_cycles(user_id, cycle)
         else:
             logger.debug(f"Active cycles for user {user_id} restored from active_cycles cache")
-
-        if not cycle:
-            logger.debug(f"No active cycles for user {user_id}")
-            return None
-        else:
-            logger.debug(f"Active cycles for user {user_id}: {cycle}")
 
         logger.debug(f"Getting next word for user {user_id}")
         # Find word with incomplete methods
 
         progress = random.choice(cycle)
         last_word_in_cycle = len(cycle) == 1
-        logger.debug(f"Previous progress: {previous_progress}")
-        previous_word_id = previous_progress.word.id if previous_progress else None
-        while not last_word_in_cycle and progress.word.id == previous_word_id:
-            progress = random.choice(cycle)
+        if previous_progress:
+            previous_word_id = previous_progress.word.id
+            previous_method = previous_progress.current_method
+            while not last_word_in_cycle and progress.word.id == previous_word_id:
+                progress = random.choice(cycle)
+        else:
+            previous_word_id = None
+            previous_method = None
 
-        logger.debug(f"Checking word {progress.word.id} for user {user_id}")
-        previous_method = previous_progress.current_method if previous_progress else None
+        logger.debug(f"Previous progress: word {previous_word_id}, method {previous_method}")
         next_method = progress.get_next_method(last_word_in_cycle, previous_method)
         if next_method:
             logger.debug(f"Next method for user {user_id}: {next_method}")
@@ -611,7 +600,7 @@ class CycleService:
         if not response:
             return None
         
-        word_progress.current_method = method_entity.get_method_type()
+        word_progress.current_method = method_entity.type
 
         # Process the response based on action
         if response.action == UserAction.MARK_LEARNED:
@@ -620,10 +609,10 @@ class CycleService:
         elif response.action == UserAction.SKIP:
             logger.debug(f"Skipping word {word_progress.word.id} for now, method {word_progress.current_method}")
             # Skip current method but don't mark as completed
-            word_progress.current_method = None
+            # word_progress.current_method = None
         # elif response.action == UserAction.ANSWER:
         #     # Find the appropriate method class
-        #     method_entity = next((m for m in self.training_methods if m.get_method_type() == word_progress.current_method), None)
+        #     method_entity = next((m for m in self.training_methods if m.type == word_progress.current_method), None)
         #     if method_entity:
         #         # Check if answer is correct
         #         is_correct = method_entity.parse_response(response, self._create_training_request(word_progress, word_progress.current_method))

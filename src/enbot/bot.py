@@ -220,7 +220,7 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
         # Parse response
         response = parse_user_response(update, current_request)
         if not response:
-            return LEARNING
+            return await handle_callback(update, context)
 
         logger.debug(f"Received response: {response}")
 
@@ -239,8 +239,8 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
                 "Great job! You've completed this learning cycle.\n"
                 "Would you like to start a new one?",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("💡 Start New Cycle", callback_data="start_learning")],
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                     InlineKeyboardButton("💡 Start New Cycle", callback_data="start_learning")],
                 ]),
             )
             return MAIN_MENU
@@ -255,6 +255,7 @@ async def send_training_request(update: Update, request: TrainingRequest) -> Non
     keyboard = []
     for button in request.buttons:
         keyboard.append([InlineKeyboardButton(button["text"], callback_data=button["callback_data"])])
+    keyboard.append([InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")])
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     # Send message
@@ -281,20 +282,6 @@ def parse_user_response(update: Update, request: TrainingRequest) -> Optional[Ra
         
         return raw_response
             
-        # # Remove prefix and split the rest
-        # data = data[len(CycleService.CALLBACK_PREFIX):]
-        # action, word_id = data.split('_', 1)
-        
-        # if action == "know":
-        #     return UserResponse(UserAction.MARK_LEARNED, int(word_id))
-        # elif action == "dont_know":
-        #     return UserResponse(UserAction.SKIP, int(word_id))
-        # elif action == "back":
-        #     return UserResponse(UserAction.SKIP, int(word_id))
-        # elif action.startswith("answer_"):
-        #     _, word_id, answer_index = data.split('_')
-        #     answer = request.additional_data["options"][int(answer_index) - 1]
-        #     return UserResponse(UserAction.ANSWER, int(word_id), answer=answer)
     else:
         # Handle text message
         if request.expects_text:
@@ -316,7 +303,8 @@ async def add_words(update: Update, context: CallbackContext) -> int:
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Add all words from database (high priority)", callback_data="add_all_words_from_db_high")],
             [InlineKeyboardButton("Add all words from database (low priority)", callback_data="add_all_words_from_db_low")],
-            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+             InlineKeyboardButton(START_LEARNING, callback_data="start_learning")],
         ]),
     )
     
@@ -351,6 +339,7 @@ async def handle_add_all_words_from_db(update: Update, context: CallbackContext)
             message,
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                 InlineKeyboardButton(START_LEARNING, callback_data="start_learning"),
                  InlineKeyboardButton("📝 Add More", callback_data="add_words")],
             ]),
         )
@@ -387,7 +376,7 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
                 "world\n"
                 "python",
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
                 ]),
             )
             return ADDING_WORDS
@@ -405,7 +394,8 @@ async def handle_add_words(update: Update, context: CallbackContext) -> int:
         await update.message.reply_text(
             message,
             reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+                [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                 InlineKeyboardButton(START_LEARNING, callback_data="start_learning")],
             ]),
         )
         
