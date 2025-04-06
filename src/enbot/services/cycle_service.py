@@ -14,243 +14,12 @@ from sqlalchemy.orm import Session
 
 from enbot.models.models import UserWord, Word, User
 from enbot.models.cycle_models import WordProgressData
+from enbot.models.training_models import TrainingRequest, RawResponse, UserResponse, UserAction
 from enbot.services.learning_service import LearningService
+from enbot.services.training_methods import TrainingMethod, get_all_subclasses, BaseTrainingMethod
+
 
 logger = logging.getLogger(__name__)
-
-
-class TrainingMethod(Enum):
-    """Available training methods."""
-    BASE = "base"  # Base method
-    REMEMBER = "remember"  # Simple remember/don't remember
-    REMEMBER2 = "remember2"  # Simple remember/don't remember
-    MULTIPLE_CHOICE = "multiple_choice"  # Choose from options
-    TYPE_WORD = "type_word"  # Type the word
-    SPELLING = "spelling"  # Spell the word
-    TRANSLATION = "translation"  # Translate to/from English
-
-
-class UserAction(Enum):
-    """Possible user actions during training."""
-    ANSWER = "answer"  # User provided an answer
-    SKIP = "skip"  # User skipped the word
-    MARK_LEARNED = "mark_learned"  # User marked word as learned
-    MORE_INFO = "more_info"  # User requested more information
-    DELETE = "delete"  # User wants to delete the word
-    PREVIOUS = "previous"  # User wants to go to the previous word
-
-
-@dataclass
-class TrainingRequest:
-    """Represents a request for training a word."""
-    method: TrainingMethod
-    word: Word
-    message: str
-    buttons: List[Dict[str, str]]
-    expects_text: bool = False
-    additional_data: Dict[str, Any] = None
-
-
-@dataclass
-class RawResponse:
-    """Represents user's raw response to a training request."""
-    request: TrainingRequest
-    text: str = None
-
-
-@dataclass
-class UserResponse:
-    """Represents user's response to a training request."""
-    action: UserAction
-    word_id: int
-    answer: Optional[str] = None
-    additional_info: Optional[Dict[str, Any]] = None
-
-
-def get_all_subclasses(cls):
-    all_subclasses = []
-    for subclass in cls.__subclasses__():
-        all_subclasses.append(subclass)
-        all_subclasses.extend(get_all_subclasses(subclass))
-    return all_subclasses
-
-
-class BaseTrainingMethod:
-    """Base class for all training methods."""
-    type: TrainingMethod = TrainingMethod.BASE
-    priority: int = 0
-    def __init__(self, learning_service: LearningService):
-        self.learning_service = learning_service
-        self.callback_prefix = CycleService.CALLBACK_PREFIX
-    
-    @classmethod
-    def should_be_used_for_word(cls, word: Word) -> bool:
-        """Determine if this method should be used for the given word."""
-        return False
-    
-    @final
-    def create_request(self, word: Word) -> TrainingRequest:
-        """Create a training request for this method."""
-        return self._create_request(word)
-    
-    @abstractmethod
-    def _create_request(self, word: Word) -> TrainingRequest:
-        """Internal method to create a training request. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement this method")
-    
-    @final
-    def parse_response(self, raw_response: RawResponse) -> UserResponse:
-        """Parse user's response and determine if it's correct."""
-        return self._parse_response(raw_response)
-    
-    @abstractmethod
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        """Internal method to parse response. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement this method")
-    
-    @final  
-    def get_method_name(self) -> str:
-        """Get the TrainingMethod enum value for this method."""
-        return self.type.value
-
-
-class RememberMethodBase(BaseTrainingMethod):
-    """Simple method to remember the word."""
-    priority: int = 1
-
-    @classmethod
-    def should_be_used_for_word(cls, word: Word) -> bool:
-        """This method can be used for any word."""
-        return True
-    
-    @abstractmethod
-    def _get_message(self, word: Word) -> str:
-        """Internal method to get the message for this method. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement this method")
-
-    def _create_request(self, word: Word) -> TrainingRequest:
-        logger.debug(f"RememberMethod: Creating training request for word: {word}")
-        return TrainingRequest(
-            method=self.type,
-            word=word,
-            message=self._get_message(word),
-            buttons=[
-                {"text": "✅ Yes", "callback_data": f"{self.callback_prefix}know_{word.id}"},
-                {"text": "❌ No", "callback_data": f"{self.callback_prefix}dont_know_{word.id}"},
-                # {"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}
-            ]
-        )
-    
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        callback_data = raw_response.text[len(self.callback_prefix):]
-        if callback_data.startswith("know_"):
-            return UserResponse(UserAction.MARK_LEARNED, raw_response.request.word.id)
-        elif callback_data.startswith("dont_know_"):
-            return UserResponse(UserAction.SKIP, raw_response.request.word.id)
-        return None
-
-
-class RememberMethod(RememberMethodBase):
-    type: TrainingMethod = TrainingMethod.REMEMBER
-    
-    def _get_message(self, word: Word) -> str:
-        return f"Do you know this word2?\n\n{word.text} - {word.translation}"
-
-
-class Remember2Method(RememberMethodBase):
-    type: TrainingMethod = TrainingMethod.REMEMBER2
-    
-    def _get_message(self, word: Word) -> str:
-        return f"Do you know this word?\n\n{word.text} - {word.translation}"
-
-
-class MultipleChoiceMethod(BaseTrainingMethod):
-    """Method with multiple choice options."""
-    priority: int = 2
-    type: TrainingMethod = TrainingMethod.MULTIPLE_CHOICE
-
-    @classmethod
-    def should_be_used_for_word(cls, word: Word) -> bool:
-        """This method can be used for any word."""
-        return True
-    
-    def _create_request(self, word: Word) -> TrainingRequest:
-        # Create multiple choice options
-        options = [word.translation]  # Correct answer
-        # Add 3 random wrong options
-        wrong_options = self.learning_service.get_random_translations(3, exclude=[word.translation])
-        options.extend(wrong_options)
-        random.shuffle(options)
-        
-        return TrainingRequest(
-            method=self.type,
-            word=word,
-            message=f"Choose the correct translation for:\n\n{word.text}",
-            buttons=[
-                {"text": opt, "callback_data": f"{self.callback_prefix}answer_{word.id}_{i}"}
-                for i, opt in enumerate(options, 1)
-            ],
-            additional_data={"options": options}
-        )
-    
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        if not raw_response.text:
-            return False
-        correct_answer = raw_response.request.word.translation
-        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text == correct_answer)
-
-
-class SpellingMethod(BaseTrainingMethod):
-    """Method where user needs to spell the word."""
-    priority: int = 3
-    type: TrainingMethod = TrainingMethod.SPELLING
-
-    @classmethod
-    def should_be_used_for_word(cls, word: Word) -> bool:
-        """Use for longer words."""
-        return len(word.text) > 6
-    
-    def _create_request(self, word: Word) -> TrainingRequest:
-        return TrainingRequest(
-            method=self.type,
-            word=word,
-            message=f"Type the word for this translation:\n\n{word.translation}",
-            buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
-            expects_text=True
-        )
-    
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        if not raw_response.text:
-            return False
-        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text.lower() == raw_response.request.word.text.lower())
-
-
-class TranslationMethod(BaseTrainingMethod):
-    """Method where user needs to translate a sentence."""
-    priority: int = 4
-    type: TrainingMethod = TrainingMethod.TRANSLATION
-
-    @classmethod
-    def should_be_used_for_word(cls, word: Word) -> bool:
-        """Use for words with examples."""
-        return bool(word.examples)
-    
-    def _create_request(self, word: Word) -> TrainingRequest:
-        example = random.choice(word.examples)
-        return TrainingRequest(
-            method=self.type,
-            word=word,
-            message=f"Translate this sentence:\n\n{example.sentence}",
-            buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
-            expects_text=True,
-            additional_data={"example": example}
-        )
-    
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        if not raw_response.text:
-            return False
-        # Simple check for now - could be more sophisticated
-        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text.lower() in raw_response.request.word.translation.lower())
 
 
 class WordProgress:
@@ -350,25 +119,20 @@ class WordProgress:
 
 
 class CycleService:
-    """Service for managing learning cycles."""
+    """Service for managing word learning cycles."""
     _instance: ClassVar[Optional['CycleService']] = None
     _lock = threading.Lock()
     
     # Class-level fields (shared across all instances)
     methods: Dict[TrainingMethod, BaseTrainingMethod] = {}
-    methods_blacklist: Set[TrainingMethod] = set([
-        TrainingMethod.BASE,
-        # TrainingMethod.REMEMBER,
-        # TrainingMethod.REMEMBER2,
-        TrainingMethod.MULTIPLE_CHOICE,
-        TrainingMethod.TYPE_WORD,
-        TrainingMethod.SPELLING,
-        TrainingMethod.TRANSLATION,
+    methods_whitelist: Set[TrainingMethod] = set([
+        TrainingMethod.REMEMBER,
+        TrainingMethod.REMEMBER2,
     ])
     active_cycles: Dict[int, List[WordProgress]] = {}
     _last_cleanup: float = 0
     _cycle_timeout: int = 3600  # 1 hour
-    CALLBACK_PREFIX: str = "cycle_"
+    CALLBACK_PREFIX: str = BaseTrainingMethod.CALLBACK_PREFIX
     
     def __init__(self, learning_service: LearningService):
         """Initialize the cycle service."""
@@ -380,7 +144,7 @@ class CycleService:
             try:
                 all_subclasses = get_all_subclasses(BaseTrainingMethod)
                 for method_class in all_subclasses:
-                    if method_class.type in self.methods_blacklist: continue
+                    if not method_class.type in self.methods_whitelist: continue
                     self.methods[method_class.type] = method_class
             except Exception as e:
                 logger.error(f"Error getting method classes: {e}")
