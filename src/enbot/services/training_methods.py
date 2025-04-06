@@ -78,14 +78,12 @@ class BaseTrainingMethod(ABC):
         request.buttons.append([
             # {"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"},
             {"text": "❌ Don't learn", "callback_data": f"baseknownot"},
-            {"text": "🔊 Pronounce",   "callback_data": f"basekpronounce"},
-            {"text": "📝 Examples",    "callback_data": f"basekexamples"},
+            {"text": "🔊 Pronounce",   "callback_data": f"basepronounce"},
+            {"text": "📝 Examples",    "callback_data": f"baseexamples"},
             {"text": "✅ I know it",   "callback_data": f"baseknown"},
         ])
         for action in extra_actions:
-            if action == UserAction.PRONOUNCE:
-                request.message += f"\n\n🔊 Pronounce the word: {word.pronunciation_file}"
-            elif action == UserAction.SHOW_EXAMPLES:
+            if action == UserAction.SHOW_EXAMPLES:
                 request.message += "\n\n📝 Examples:"
                 for example in word.examples:
                     request.message += f"\n{example.sentence} - {example.translation}"
@@ -102,9 +100,9 @@ class BaseTrainingMethod(ABC):
             response = UserResponse(raw_response.request.word.id)
             response.action = UserAction.SKIP if "not" in action else UserAction.MARK_LEARNED
             return response
-        elif action.startswith("basekpronounce"):
+        elif action.startswith("basepronounce"):
             return UserResponse(raw_response.request.word.id, UserAction.PRONOUNCE)
-        elif action.startswith("basekexamples"):
+        elif action.startswith("baseexamples"):
             return UserResponse(raw_response.request.word.id, UserAction.SHOW_EXAMPLES)
         else:
             return self._parse_response(callback_data, raw_response)

@@ -133,28 +133,32 @@ class ContentGenerator:
         )
 
     @staticmethod
-    def generate_examples(word: str, target_lang: str, native_lang: str, count: int = 3) -> List[Example]:
+    def generate_examples(word: str, target_lang: str, native_lang: str, count: int = 3, sentences: Optional[List[str]] = None) -> List[Example]:
         """Generate example sentences for a word."""
         sentences_examples = []
-        sentences = []
-        synsets = wordnet.synsets(word)
-        try:
-            if synsets:
-                syn = synsets[0]
-                sentences_examples = syn.examples()
-            if sentences_examples:
-                sentences = random.sample(sentences_examples, min(count, len(sentences_examples)))
-        except Exception as e:
-            logger.error(f"Error generating examples for word: {word}, error: {e}")
+        if not sentences:
+            synsets = wordnet.synsets(word)
+            try:
+                if synsets:
+                    syn = synsets[0]
+                    sentences_examples = syn.examples()
+                if sentences_examples:
+                    sentences = random.sample(sentences_examples, min(count, len(sentences_examples)))
+                    for i in range(len(sentences)):
+                        translation=ContentGenerator.generate_translation(sentences[i], target_lang, native_lang)
+                        sentences[i] = f"{sentences[i]} ; {translation}"
+            except Exception as e:
+                logger.error(f"Error generating examples for word: {word}, error: {e}")
 
         if not sentences: return []
 
         examples = []
         for sentence in sentences:
             try:
+                sentence, translation = sentence.split(" ; ")
                 example = Example(
                     sentence=sentence,
-                    translation=ContentGenerator.generate_translation(sentence, target_lang, native_lang),
+                    translation=translation,
                     is_good=True,
                 )
                 examples.append(example)
@@ -172,6 +176,7 @@ class ContentGenerator:
         target_lang: str,
         native_lang: str,
         translation: Optional[str] = None,
+        user_examples: Optional[List[Example]] = None,
     ) -> tuple[Word, List[Example]]:
         """Generate all content for a word."""
         if translation is None:
@@ -180,7 +185,7 @@ class ContentGenerator:
         pronunciation_file = cls.generate_pronunciation(word, target_lang)
         image_file = cls.generate_image(word)
         examples_count = random.randint(settings.content.min_examples, settings.content.max_examples)
-        examples = cls.generate_examples(word, target_lang, native_lang, examples_count)
+        examples = cls.generate_examples(word, target_lang, native_lang, examples_count, user_examples)
 
         word_obj = Word(
             text=word,

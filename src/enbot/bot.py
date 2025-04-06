@@ -209,6 +209,17 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
 
     await log_received(update, "learn")
 
+    # Check if this is a pronunciation request
+    if update.callback_query and "basepronounce" in update.callback_query.data:
+        current_request = context.user_data.get('current_request')
+        if current_request and current_request.word.pronunciation_file:
+            await send_audio_file(update, current_request.word.pronunciation_file)
+            # await send_training_request(update, current_request)
+            return LEARNING
+        else:
+            await update.callback_query.answer("No pronunciation available for this word")
+            return LEARNING
+
     db = SessionLocal()
     try:
         # Get current request from context
@@ -754,6 +765,23 @@ async def handle_notifications_set(update: Update, context: CallbackContext) -> 
         db.close()
 
     return MAIN_MENU
+
+
+async def send_audio_file(update: Update, audio_file_path: str) -> None:
+    """Send an audio file to the user."""
+    try:
+        with open(audio_file_path, 'rb') as audio:
+            if update.callback_query:
+                await update.callback_query.message.reply_audio(audio)
+            else:
+                await update.message.reply_audio(audio)
+    except Exception as e:
+        logger.error(f"Error sending audio file: {str(e)}")
+        error_message = "Sorry, I couldn't send the audio file. Please try again later."
+        if update.callback_query:
+            await update.callback_query.answer(error_message)
+        else:
+            await update.message.reply_text(error_message)
 
 
 def get_user_from_update(update: Update) -> Optional[User]:

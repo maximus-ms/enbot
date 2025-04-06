@@ -212,9 +212,14 @@ class UserService:
         added_words = []
         for word_text in words:
             translation = None
+            user_examples = None
             try:
-                if " - " in word_text:
-                    word_text, translation = [part.strip() for part in word_text.split(" - ")]
+                if " ;; " in word_text:
+                    line_parts = [part.strip() for part in word_text.split(" ;; ")]
+                    word_text, translation = [part.strip() for part in line_parts[0].split(" - ")]
+                    if len(line_parts) > 1:
+                        user_examples = line_parts[1:]
+
             except Exception:
                 logger.error(f"Error splitting word: {word_text}")
                 pass
@@ -279,6 +284,7 @@ class UserService:
                     user.target_language,
                     user.native_language,
                     translation,
+                    user_examples,
                 )
                 self.db.add(word_obj)
                 self.db.commit()
