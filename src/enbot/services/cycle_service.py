@@ -63,7 +63,8 @@ class WordProgress:
             return None
 
         logger.debug(f"Incomplete methods0: {incomplete}")
-        incomplete -= set([previous_method])
+        if last_word_in_cycle and previous_method:
+            incomplete -= set([previous_method])
         logger.debug(f"Incomplete methods1: {incomplete}")
         
         if not incomplete:
