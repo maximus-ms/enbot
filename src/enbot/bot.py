@@ -3,6 +3,7 @@ import logging
 import random
 from typing import Optional, List, Dict
 from datetime import datetime
+import asyncio
 
 from telegram import (
     InlineKeyboardButton,
@@ -40,6 +41,71 @@ from sqlalchemy import and_
 # Get logger for this module
 logger = logging.getLogger(__name__)
 
+class AdminNotificationHandler(logging.Handler):
+    """Custom logging handler that sends error messages to admin users."""
+    
+    def __init__(self, level=logging.ERROR):
+        super().__init__(level)
+        self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    def emit(self, record):
+        """Send the log record to admin users."""
+        if not bot_application:
+            return
+            
+        try:
+            message = self.format(record)
+            # Get all admin users
+            db = SessionLocal()
+            try:
+                admin_users = db.query(User).filter(User.telegram_id.in_(settings.bot.admin_ids)).all()
+                for admin in admin_users:
+                    asyncio.create_task(
+                        bot_application.bot.send_message(
+                            chat_id=admin.telegram_id,
+                            text=f"⚠️ {record.levelname} Alert:\n\n{message}",
+                            parse_mode="HTML"
+                        )
+                    )
+            finally:
+                db.close()
+        except KeyboardInterrupt:
+            return
+        except Exception as e:
+            # If something goes wrong in the handler, log it to prevent recursion
+            print(f"Error in AdminNotificationHandler: {e}")
+
+# Store the bot application globally so it can be accessed by the logging handler
+bot_application: Optional[Application] = None
+bot_application_bkp: Optional[str] = None
+admin_notification_handler: Optional[AdminNotificationHandler] = None
+
+
+def setup_admin_notifications(app: Application, level: int = logging.ERROR) -> None:
+    """Set up admin notifications."""
+    global bot_application
+    global bot_application_bkp
+    global admin_notification_handler
+    bot_application = app
+    bot_application_bkp = app
+    
+    # Add the handler to the root logger
+    root_logger = logging.getLogger()
+    admin_notification_handler = AdminNotificationHandler(level=level)
+    root_logger.addHandler(admin_notification_handler)
+
+def config_admin_notifications(level: int = logging.ERROR) -> None:
+    """Configure admin notifications."""
+    global admin_notification_handler
+    global bot_application
+    admin_notification_handler.setLevel(level)
+    bot_application = bot_application_bkp
+
+def disable_admin_notifications() -> None:
+    """Disable admin notifications."""
+    global bot_application
+    bot_application = None
+
 # Conversation states
 MAIN_MENU, ADDING_WORDS, LEARNING = range(3)
 
@@ -52,11 +118,15 @@ VIEW_STATISTICS = "📊 View Statistics"
 SETTINGS = "⚙️ Settings"
 DAILY_GOALS = "🎯 Daily Goals"
 NOTIFICATIONS = "🔔 Notifications"
+ADMIN_MENU = "🛠️ Admin Menu"
 
 def msg_back_to(text: str) -> str: return f"🔙 {text}"
 
 ERR_MSG_NOT_REGISTERED = "Please /start first to register."
 ERR_KB_NOT_REGISTERED = [[InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
+
+ERR_MSG_NOT_ADMIN = "You don't have admin privileges."
+ERR_KB_NOT_ADMIN = [[InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
 
 # Settings options
 # CHANGE_LANGUAGE = "Change Language"
@@ -131,6 +201,10 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await show_statistics(update, context)
     elif query.data == "settings":
         return await show_settings(update, context)
+    elif query.data == "admin_menu":
+        return await show_admin_menu(update, context)
+    elif query.data.startswith("admin_menu_"):
+        return await handle_admin_menu(update, context)
     elif query.data == "back_to_menu":
         return await handle_start(update, context)
     elif query.data == "daily_goals":
@@ -472,13 +546,22 @@ async def show_statistics(update: Update, context: CallbackContext) -> None:
 async def show_settings(update: Update, context: CallbackContext) -> None:
     """Show settings menu."""
     query = update.callback_query
+    user = get_user_from_update(update)
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+
+    keyboard = []
     
-    keyboard = [
+    if user.is_admin:
+        keyboard.append([InlineKeyboardButton(ADMIN_MENU, callback_data="admin_menu")])
+
+    keyboard.extend([
         # [InlineKeyboardButton(CHANGE_LANGUAGE, callback_data="change_language")],
         [InlineKeyboardButton(DAILY_GOALS, callback_data="daily_goals")],
         [InlineKeyboardButton(NOTIFICATIONS, callback_data="notifications")],
         [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
-    ]
+    ])
     
     await query.edit_message_text(
         "⚙️ Settings\n\n"
@@ -488,6 +571,63 @@ async def show_settings(update: Update, context: CallbackContext) -> None:
 
     return MAIN_MENU
 
+
+async def show_admin_menu(update: Update, context: CallbackContext) -> int:
+    """Show admin menu."""
+    query = update.callback_query
+    user = get_user_from_update(update)
+    if not user: 
+        await query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
+        return MAIN_MENU
+    
+    # if user.telegram_id not in settings.bot.admin_ids:
+    if not user.is_admin:
+        await query.edit_message_text(ERR_MSG_NOT_ADMIN, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_ADMIN))
+        return MAIN_MENU
+    
+    keyboard = [
+        [InlineKeyboardButton("⚠️ Set notifications warnings", callback_data="admin_menu_notifications_warnings")],
+        [InlineKeyboardButton("🚨 Set notifications errors", callback_data="admin_menu_notifications_errors")],
+        [InlineKeyboardButton("🔕 Disable notifications", callback_data="admin_menu_notifications_disable")],
+        [InlineKeyboardButton("🔔 Send test notification warning", callback_data="admin_menu_notifications_test_warning")],
+        [InlineKeyboardButton("🚨 Send test notification error", callback_data="admin_menu_notifications_test_error")],
+        [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+    ]
+
+    await query.edit_message_text(
+        "🛠️ Admin Menu\n\n"
+        f"🔔 Notifications level: {'OFF' if not bot_application else logging.getLevelName(admin_notification_handler.level)}\n\n"
+        "Select an option to manage the bot:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+    return MAIN_MENU
+
+
+async def handle_admin_menu(update: Update, context: CallbackContext) -> None:
+    """Handle admin menu."""
+    query = update.callback_query
+    user = get_user_from_update(update)
+    if not user: 
+        await query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
+        return MAIN_MENU
+
+    if not user.is_admin:
+        await query.edit_message_text(ERR_MSG_NOT_ADMIN, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_ADMIN))
+        return MAIN_MENU
+    
+    if update.callback_query.data == "admin_menu_notifications_warnings":
+        config_admin_notifications(logging.WARNING)
+    elif update.callback_query.data == "admin_menu_notifications_errors":
+        config_admin_notifications(logging.ERROR)
+    elif update.callback_query.data == "admin_menu_notifications_disable":
+        disable_admin_notifications()
+    elif update.callback_query.data == "admin_menu_notifications_test_warning":
+        logger.warning("Test warning notification")
+    elif update.callback_query.data == "admin_menu_notifications_test_error":
+        logger.error("Test error notification")
+
+    return MAIN_MENU
 
 async def handle_language_selection(update: Update, context: CallbackContext) -> None:
     """Handle language selection."""
@@ -802,6 +942,9 @@ def main() -> None:
     """Start the bot."""
     # Create the Application
     application = Application.builder().token(settings.bot.token).build()
+
+    # Set up error notifications
+    setup_admin_notifications(application)
 
     application.add_handler(CommandHandler("start", handle_start))
 

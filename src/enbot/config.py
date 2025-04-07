@@ -65,11 +65,12 @@ class DatabaseSettings:
 class LoggingSettings:
     """Logging configuration settings."""
     level: str = os.getenv("LOG_LEVEL", "INFO")
-    format: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format: str = os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     dir: Optional[str] = os.getenv("LOG_DIR", str(LOG_DIR))
     rotation: str = os.getenv("LOG_FILE_ROTATION", "midnight")
     interval: int = int(os.getenv("LOG_FILE_ROTATION_INTERVAL", "1"))
     backup_count: int = int(os.getenv("LOG_FILE_ROTATION_BACKUP_COUNT", "30"))
+    admin_notification_level: str = os.getenv("LOG_ADMIN_NOTIFICATION_LEVEL", "ERROR")  # Level at which to notify admins
 
 
 def get_admin_ids() -> list[int]:

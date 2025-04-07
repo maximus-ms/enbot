@@ -61,6 +61,10 @@ class EnBot:
             self.application = Application.builder().token(settings.bot.token).build()
             self.logger.info("Application created")
 
+            # Set up error notifications
+            from enbot.bot import setup_admin_notifications
+            setup_admin_notifications(self.application, settings.logging.admin_notification_level)
+
             # Create conversation handler for both messages and callbacks
             conv_handler = ConversationHandler(
                 entry_points=[CommandHandler("start", handle_start)],
@@ -118,6 +122,8 @@ class EnBot:
 
             # Stop application
             if self.application:
+                from enbot.bot import disable_admin_notifications
+                disable_admin_notifications()
                 await self.application.updater.stop()
                 await self.application.stop()
                 await self.application.shutdown()
