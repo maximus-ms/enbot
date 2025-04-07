@@ -179,7 +179,7 @@ class LearningService:
         return cycle_words
 
     def mark_word_as_learned(
-        self, user_id: int, user_word_id: int, time_spent: float
+        self, user_id: int, word_id: int, time_spent: float
     ) -> None:
         """Mark a word as learned in the current cycle."""
 
@@ -187,18 +187,21 @@ class LearningService:
         if not learning_cycle:
             raise ValueError(f"No active learning cycle for user {user_id}")
 
+        # Get cycle_word with user_word in a single query using JOIN
         cycle_word = (
             self.db.query(CycleWord)
+            .join(UserWord, CycleWord.user_word_id == UserWord.id)
             .filter(
                 and_(
-                    CycleWord.user_word_id == user_word_id,
+                    UserWord.user_id == user_id,
+                    UserWord.word_id == word_id,
                     CycleWord.cycle_id == learning_cycle.id,
                 )
             )
             .first()
         )
         if not cycle_word:
-            raise ValueError(f"Word {user_word_id} not found in cycle {learning_cycle.id}")
+            raise ValueError(f"Word {word_id} not found in cycle {learning_cycle.id}")
 
         # Update cycle word status
         was_learned = cycle_word.is_learned
