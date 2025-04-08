@@ -87,7 +87,7 @@ class BaseTrainingMethod(ABC):
             if action == UserAction.SHOW_EXAMPLES:
                 request.message += "\n\n📝 Examples:"
                 for example in word.examples:
-                    request.message += f"\n{example.sentence} - {example.translation}"
+                    request.message += f"\n*{self.prepare_message_for_markdown(example.sentence)}* \- _{self.prepare_message_for_markdown(example.translation)}_"
         request.buttons = self._add_callback_prefix_to_list_of_buttons(request.buttons)
         return request
     
@@ -112,6 +112,11 @@ class BaseTrainingMethod(ABC):
     def get_method_name(self) -> str:
         """Get the TrainingMethod enum value for this method."""
         return self.type.value
+    
+    @final
+    def prepare_message_for_markdown(self, message: str) -> str:
+        """Prepare the message for markdown."""
+        return message.replace("*", "\\*").replace("_", "\\_").replace(".", "\\.").replace("-", "\\-")
 
 
 class RememberMethodBase(BaseTrainingMethod):

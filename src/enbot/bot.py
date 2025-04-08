@@ -286,12 +286,22 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
 
     await log_received(update, "learn")
 
+    # Delete previous audio message if exists
+    if 'last_audio_message_id' in context.user_data:
+        try:
+            if update.callback_query:
+                await update.callback_query.message.chat.delete_message(context.user_data['last_audio_message_id'])
+            else:
+                await update.message.chat.delete_message(context.user_data['last_audio_message_id'])
+            del context.user_data['last_audio_message_id']
+        except Exception as e:
+            logger.error(f"Error deleting audio message: {str(e)}")
+
     # Check if this is a pronunciation request
     if update.callback_query and "basepronounce" in update.callback_query.data:
         current_request = context.user_data.get('current_request')
         if current_request and current_request.word.pronunciation_file:
-            await send_audio_file(update, current_request.word.pronunciation_file)
-            # await send_training_request(update, current_request)
+            await send_audio_file(update, current_request.word.pronunciation_file, context)
             return LEARNING
         else:
             await update.callback_query.answer("No pronunciation available for this word")
@@ -640,6 +650,7 @@ async def handle_admin_menu(update: Update, context: CallbackContext) -> None:
 
     return MAIN_MENU
 
+
 async def handle_language_selection(update: Update, context: CallbackContext) -> None:
     """Handle language selection."""
     user = get_user_from_update(update)
@@ -918,14 +929,18 @@ async def handle_notifications_set(update: Update, context: CallbackContext) -> 
     return MAIN_MENU
 
 
-async def send_audio_file(update: Update, audio_file_path: str) -> None:
-    """Send an audio file to the user."""
+async def send_audio_file(update: Update, audio_file_path: str, context: CallbackContext) -> None:
+    """Send an audio file to the user and store its message ID for later deletion."""
     try:
         with open(audio_file_path, 'rb') as audio:
             if update.callback_query:
-                await update.callback_query.message.reply_audio(audio)
+                message = await update.callback_query.message.reply_audio(audio)
+                # Store message ID in context for later deletion
+                context.user_data['last_audio_message_id'] = message.message_id
             else:
-                await update.message.reply_audio(audio)
+                message = await update.message.reply_audio(audio)
+                # Store message ID in context for later deletion
+                context.user_data['last_audio_message_id'] = message.message_id
     except Exception as e:
         logger.error(f"Error sending audio file: {str(e)}")
         error_message = "Sorry, I couldn't send the audio file. Please try again later."
