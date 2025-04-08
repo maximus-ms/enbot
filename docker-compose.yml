@@ -10,7 +10,7 @@ services:
     env_file:
       - .env
     environment:
-      - TZ=UTC
+      - TZ=Europe/Kiev
     healthcheck:
       test: ["CMD", "python", "-c", "import sqlite3; sqlite3.connect('/app/data/enbot.db')"]
       interval: 30s

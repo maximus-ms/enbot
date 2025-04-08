@@ -8,6 +8,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.pytest_cache/
 venv/
 env/
 build/
@@ -58,6 +59,17 @@ docker-compose.yml
 docs/
 *.md
 !README.md
+
+# Data
+data/
+
+# TAR files
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.lzma
+*.tar.lz
 
 # Environment variables
 .env
