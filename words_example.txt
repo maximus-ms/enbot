@@ -28,3 +28,14 @@ To book a ticket - Забронювати квиток ;; I booked a ticket to P
 To check in / check out - Заселитися / виселитися ;; We’ll check in at noon. ; Ми заселимося опівдні. ;; Please check out before 11 a.m. ; Будь ласка, виселіться до 11 ранку.
 To get lost - Заблукати ;; We got lost in the city. ; Ми заблукали в місті. ;; I always get lost in new places. ; Я завжди гублюся в нових місцях.
 To go sightseeing - Оглядати визначні місця ;; We went sightseeing in Rome. ; Ми оглядали визначні місця Риму. ;; I love going sightseeing when I travel. ; Я люблю оглядати пам’ятки, коли подорожую.
+
+assumption - припущення ;; We made the wrong assumption about their plans. ; Ми зробили неправильне припущення щодо їхніх планів. ;; His assumption turned out to be false. ; Його припущення виявилося хибним.
+consequence - наслідок ;; Every action has a consequence. ; Кожна дія має наслідок. ;; The consequences of the accident were serious. ; Наслідки аварії були серйозними.
+concern - занепокоєння, турбота ;; Her main concern is her son’s health. ; Її головна турбота — здоров’я сина. ;; I understand your concern about the future. ; Я розумію твоє занепокоєння щодо майбутнього.
+requirement - вимога ;; This job has some strict requirements. ; Ця робота має кілька суворих вимог. ;; Meeting the requirements is essential. ; Виконання вимог є обов’язковим.
+approach - підхід ;; We need a new approach to the problem. ; Нам потрібен новий підхід до цієї проблеми. ;; His approach was more practical. ; Його підхід був більш практичним.
+increase - збільшувати(ся) ;; Prices increased last month. ; Ціни зросли минулого місяця. ;; They increased the budget for the project. ; Вони збільшили бюджет проєкту.
+prevent - запобігати ;; Good planning prevents problems. ; Хороше планування запобігає проблемам. ;; We must prevent this from happening again. ; Ми повинні запобігти повторенню цього.
+benefit - користь, вигода ;; Regular exercise has many benefits. ; Регулярні фізичні вправи мають багато переваг. ;; One benefit of this system is its simplicity. ; Одна з переваг цієї системи — її простота.
+obvious - очевидний ;; The answer was obvious. ; Відповідь була очевидною. ;; It’s obvious that she’s tired. ; Очевидно, що вона втомлена.
+efficient - ефективний ;; This machine is more efficient than the old one. ; Ця машина ефективніша за стару. ;; He is a very efficient worker. ; Він дуже ефективний працівник.

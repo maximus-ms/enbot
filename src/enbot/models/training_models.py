@@ -21,6 +21,7 @@ class UserAction(Enum):
     PREVIOUS = "previous"  # User wants to go to the previous word
     PRONOUNCE = "pronounce"  # User wants to pronounce the word
     SHOW_EXAMPLES = "show_examples"  # User wants to see examples of the word
+    SHOW_CORRECT_ANSWER = "showcorrectanswer"  # User did a mistake, show correct answer
 
 @dataclass
 class TrainingRequest:

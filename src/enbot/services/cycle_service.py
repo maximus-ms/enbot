@@ -128,7 +128,6 @@ class CycleService:
     methods: Dict[TrainingMethod, BaseTrainingMethod] = {}
     methods_whitelist: Set[TrainingMethod] = set([
         TrainingMethod.REMEMBER,
-        TrainingMethod.REMEMBER2,
         TrainingMethod.MULTIPLE_CHOICE_NATIVE,
         TrainingMethod.MULTIPLE_CHOICE_TARGET,
     ])
@@ -368,8 +367,7 @@ class CycleService:
             return None
         
         word_progress.current_method = method_entity.type
-        use_the_same_word_and_method = False
-        extra_actions = []
+        return_with_extra_actions = []
         # Process the response based on action
         if response.action == UserAction.MARK_LEARNED:
             logger.debug(f"Marking word {word_progress.word.id} as learned in total")
@@ -385,31 +383,28 @@ class CycleService:
         elif response.action == UserAction.PRONOUNCE:
             logger.debug(f"Pronouncing word {word_progress.word.id}")
             word_progress.record_attempt(word_progress.current_method, False)
-            use_the_same_word_and_method = True
-            extra_actions.append(UserAction.PRONOUNCE)
+            return_with_extra_actions.append(UserAction.PRONOUNCE)
         elif response.action == UserAction.SHOW_EXAMPLES:
             logger.debug(f"Showing examples for word {word_progress.word.id}")
             word_progress.record_attempt(word_progress.current_method, False)
-            use_the_same_word_and_method = True
-            extra_actions.append(UserAction.SHOW_EXAMPLES)
+            return_with_extra_actions.append(UserAction.SHOW_EXAMPLES)
+        elif response.action == UserAction.SHOW_CORRECT_ANSWER:
+            logger.debug(f"Showing correct answer for word {word_progress.word.id}")
+            word_progress.record_attempt(word_progress.current_method, False)
+            return_with_extra_actions.append(UserAction.SHOW_CORRECT_ANSWER)
+        elif response.action == UserAction.DELETE:
+            logger.debug(f"Deleting word {word_progress.word.id}")
+            cycle.remove(word_progress)
+            self.learning_service.delete_user_word(user_id, word_progress.word.id)
+            self._save_user_cycles(user_id, cycle)
         else:
             logger.debug(f"Unknown action: {response.action}")
-
-        # elif response.action == UserAction.ANSWER:
-        #     # Find the appropriate method class
-        #     method_entity = next((m for m in self.training_methods if m.type == word_progress.current_method), None)
-        #     if method_entity:
-        #         # Check if answer is correct
-        #         is_correct = method_entity.parse_response(response, self._create_training_request(word_progress, word_progress.current_method))
-        #         word_progress.record_attempt(word_progress.current_method, is_correct)
 
         # Check if word is complete
         if word_progress.is_complete():
             logger.debug(f"Word {word_progress.word.id} is complete, marking as learned")
             # Mark word as learned in database
             self.learning_service.mark_word_as_learned(user_id, word_progress.word.id, time_spent=0) # TODO: add time spent
-            # Save the updated cycles
-            # self._save_user_cycles(user_id, cycle)
             # Remove from active cycle
             cycle.remove(word_progress)
             # Save the updated cycles
@@ -423,7 +418,7 @@ class CycleService:
             self.learning_service.mark_cycle_as_completed(user_id)
             return None
         
-        if use_the_same_word_and_method:
-            return self._create_training_request(word_progress, extra_actions)
+        if return_with_extra_actions:
+            return self._create_training_request(word_progress, return_with_extra_actions)
         else:
             return self.get_next_word(user_id, word_progress)

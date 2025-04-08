@@ -459,3 +459,13 @@ class LearningService:
             logger.error(f"Error deleting cycles for user {user_id}: {e}")
             self.db.rollback()
             raise
+
+    def delete_user_word(self, user_id: int, word_id: int) -> None:
+        """Delete a user word from the database."""
+        user_word = self.db.query(UserWord).filter(UserWord.user_id == user_id, UserWord.word_id == word_id).first()
+        if not user_word:
+            raise ValueError(f"User word {word_id} not found for user {user_id}")
+        self.db.query(CycleWord).filter(CycleWord.user_word_id == user_word.id).delete()
+        self.db.query(UserCycle).filter(UserCycle.user_id == user_id, UserCycle.word_id == word_id).delete()
+        self.db.delete(user_word)
+        self.db.commit()

@@ -216,9 +216,12 @@ class UserService:
             try:
                 if " ;; " in word_text:
                     line_parts = [part.strip() for part in word_text.split(" ;; ")]
-                    word_text, translation = [part.strip() for part in line_parts[0].split(" - ")]
+                    word_text = line_parts[0]
                     if len(line_parts) > 1:
                         user_examples = line_parts[1:]
+                word_text = [part.strip() for part in word_text.split(" - ")]
+                if len(word_text) > 1: translation = word_text[1]
+                word_text = word_text[0]
 
             except Exception:
                 logger.error(f"Error splitting word: {word_text}")

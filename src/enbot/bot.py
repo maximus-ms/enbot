@@ -304,7 +304,13 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
             await send_audio_file(update, current_request.word.pronunciation_file, context)
             return LEARNING
         else:
-            await update.callback_query.answer("No pronunciation available for this word")
+            await update.callback_query.edit_message_text(
+                "No pronunciation available for this word",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                     InlineKeyboardButton("Next word", callback_data="start_learning")],
+                ]),
+            )
             return LEARNING
 
     db = SessionLocal()
@@ -368,13 +374,13 @@ async def send_training_request(update: Update, request: TrainingRequest) -> Non
         await update.callback_query.edit_message_text(
             request.message,
             reply_markup=reply_markup,
-            parse_mode="MarkdownV2"
+            parse_mode="HTML"
         )
     else:
         await update.message.reply_text(
             request.message,
             reply_markup=reply_markup,
-            parse_mode="MarkdownV2"
+            parse_mode="HTML"
         )
 
 
