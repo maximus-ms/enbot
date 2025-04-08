@@ -251,6 +251,66 @@ class LearningService:
         next_review = datetime.now(UTC) + timedelta(days=days)
         return next_review.replace(tzinfo=UTC)  # Ensure timezone awareness
 
+    def get_random_word_texts(self, num_word_texts: int, exclude: Optional[List[str]] = None) -> List[str]:
+        """Get random word texts from the database."""
+        query = self.db.query(Word.text).distinct()
+        if exclude:
+            query = query.filter(Word.text.notin_(exclude))
+        word_texts = query.all()
+        random_word_texts = random.sample(word_texts, min(num_word_texts, len(word_texts)))
+        random_word_texts = [word_text[0] for word_text in random_word_texts]
+        return random_word_texts
+
+    def get_random_translations(self, num_translations: int, exclude: Optional[List[str]] = None) -> List[str]:
+        """Get random translations from the database."""
+        query = self.db.query(Word.translation).distinct()
+        if exclude:
+            query = query.filter(Word.translation.notin_(exclude))
+        translations = query.all()
+        random_translations = random.sample(translations, min(num_translations, len(translations)))
+        random_translations = [translation[0] for translation in random_translations]
+        return random_translations
+
+    def get_user_random_translations(self, user_id: int, num_translations: int, exclude: Optional[List[str]] = None) -> List[str]:
+        """Get random translations from the user's latest learning cycles."""
+        # Get the latest learning cycles for the user
+        latest_cycles = (
+            self.db.query(LearningCycle)
+            .filter(
+                and_(
+                    LearningCycle.user_id == user_id,
+                )
+            )
+            .order_by(LearningCycle.end_time.desc())
+            .limit(3)  # Get translations from last 5 completed cycles
+            .all()
+        )
+
+        # Get all words from these cycles
+        cycle_words = []
+        for cycle in latest_cycles:
+            words = (
+                self.db.query(Word.translation)
+                .join(CycleWord, Word.id == CycleWord.user_word_id)
+                .join(UserWord, CycleWord.user_word_id == UserWord.id)
+                .filter(
+                    and_(
+                        CycleWord.cycle_id == cycle.id,
+                        UserWord.user_id == user_id
+                    )
+                )
+                .distinct()
+                .all()
+            )
+            cycle_words.extend([translation for (translation,) in words])
+
+        # Remove excluded translations if any
+        if exclude:
+            cycle_words = [word for word in cycle_words if word not in exclude]
+
+        # Return random sample of translations
+        return random.sample(cycle_words, min(num_translations, len(cycle_words)))
+
     def complete_cycle(self, cycle_id: int) -> None:
         """Mark a learning cycle as completed."""
         cycle = (

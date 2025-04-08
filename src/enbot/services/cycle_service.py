@@ -129,6 +129,8 @@ class CycleService:
     methods_whitelist: Set[TrainingMethod] = set([
         TrainingMethod.REMEMBER,
         TrainingMethod.REMEMBER2,
+        TrainingMethod.MULTIPLE_CHOICE_NATIVE,
+        TrainingMethod.MULTIPLE_CHOICE_TARGET,
     ])
     active_cycles: Dict[int, List[WordProgress]] = {}
     _last_cleanup: float = 0

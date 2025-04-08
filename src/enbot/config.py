@@ -70,7 +70,7 @@ class LoggingSettings:
     rotation: str = os.getenv("LOG_FILE_ROTATION", "midnight")
     interval: int = int(os.getenv("LOG_FILE_ROTATION_INTERVAL", "1"))
     backup_count: int = int(os.getenv("LOG_FILE_ROTATION_BACKUP_COUNT", "30"))
-    admin_notification_level: str = os.getenv("LOG_ADMIN_NOTIFICATION_LEVEL", "ERROR")  # Level at which to notify admins
+    admin_notification_level: str = os.getenv("LOG_ADMIN_NOTIFICATION_LEVEL", "OFF")  # Level at which to notify admins
 
 
 def get_admin_ids() -> list[int]:

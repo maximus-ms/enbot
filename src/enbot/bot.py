@@ -81,12 +81,15 @@ bot_application_bkp: Optional[str] = None
 admin_notification_handler: Optional[AdminNotificationHandler] = None
 
 
-def setup_admin_notifications(app: Application, level: int = logging.ERROR) -> None:
+def setup_admin_notifications(app: Application, level: str = "ERROR") -> None:
     """Set up admin notifications."""
     global bot_application
     global bot_application_bkp
     global admin_notification_handler
-    bot_application = app
+    if level != "OFF":
+        bot_application = app
+    else:
+        level = logging.ERROR
     bot_application_bkp = app
     
     # Add the handler to the root logger
@@ -352,9 +355,17 @@ async def send_training_request(update: Update, request: TrainingRequest) -> Non
 
     # Send message
     if update.callback_query:
-        await update.callback_query.edit_message_text(request.message, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(
+            request.message,
+            reply_markup=reply_markup,
+            parse_mode="MarkdownV2"
+        )
     else:
-        await update.message.reply_text(request.message, reply_markup=reply_markup)
+        await update.message.reply_text(
+            request.message,
+            reply_markup=reply_markup,
+            parse_mode="MarkdownV2"
+        )
 
 
 def parse_user_response(update: Update, request: TrainingRequest) -> Optional[RawResponse]:

@@ -17,7 +17,8 @@ class TrainingMethod(Enum):
     BASE = "base"  # Base method
     REMEMBER = "remember"  # Simple remember/don't remember
     REMEMBER2 = "remember2"  # Simple remember/don't remember
-    MULTIPLE_CHOICE = "multiple_choice"  # Choose from options
+    MULTIPLE_CHOICE_NATIVE = "multiple_choice_native"  # Choose from options
+    MULTIPLE_CHOICE_TARGET = "multiple_choice_target"  # Choose from options
     SPELLING = "spelling"  # Spell the word
     TRANSLATION = "translation"  # Translate to/from English
     # TYPE_WORD = "type_word"  # Type the word
@@ -44,10 +45,10 @@ class BaseTrainingMethod(ABC):
         """Internal method to create a training request. Must be implemented by subclasses."""
         raise NotImplementedError("Subclasses must implement this method")
     
-    @abstractmethod
     def _parse_response(self, callback_data: str, raw_response: RawResponse) -> UserResponse:
-        """Internal method to parse response. Must be implemented by subclasses."""
-        raise NotImplementedError("Subclasses must implement this method")
+        """Parse user's response and determine if it's correct."""
+        if not callback_data.startswith("answer"): return None
+        return UserResponse(raw_response.request.word.id, UserAction(callback_data))
     
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
@@ -138,30 +139,26 @@ class RememberMethodBase(BaseTrainingMethod):
                  {"text": "✅ Learned",    "callback_data": UserAction.ANSWER_YES.value}],
             ]
         )
-    
-    def _parse_response(self, callback_data: str, raw_response: RawResponse) -> UserResponse:
-        if not callback_data.startswith("answer"): return None
-        return UserResponse(raw_response.request.word.id, UserAction(callback_data))
 
 
 class RememberMethod(RememberMethodBase):
     type: TrainingMethod = TrainingMethod.REMEMBER
     
     def _get_message(self, word: Word) -> str:
-        return f"Do you know this word (METHOD1)?\n\n{word.text} - {word.translation}"
+        return f"Do you know this word?\n\n*{word.text}* \- _{word.translation}_"
 
 
 class Remember2Method(RememberMethodBase):
     type: TrainingMethod = TrainingMethod.REMEMBER2
     
     def _get_message(self, word: Word) -> str:
-        return f"Do you know this word (METHOD2)?\n\n{word.text} - {word.translation}"
+        return f"Do you know this word?\n\n*{word.text}* \- _{word.translation}_\."
 
 
-class MultipleChoiceMethod(BaseTrainingMethod):
+class MultipleChoiceNativeMethod(BaseTrainingMethod):
     """Method with multiple choice options."""
     priority: int = 2
-    type: TrainingMethod = TrainingMethod.MULTIPLE_CHOICE
+    type: TrainingMethod = TrainingMethod.MULTIPLE_CHOICE_NATIVE
 
     @classmethod
     def should_be_used_for_word(cls, word: Word) -> bool:
@@ -174,24 +171,56 @@ class MultipleChoiceMethod(BaseTrainingMethod):
         # Add 3 random wrong options
         wrong_options = self.learning_service.get_random_translations(3, exclude=[word.translation])
         options.extend(wrong_options)
-        random.shuffle(options)
+        # Create a list of indexes and shuffle it
+        option_indexes = list(range(len(options)))
+        random.shuffle(option_indexes)
+
+        buttons = [
+            [{"text": options[i], "callback_data": UserAction.ANSWER_YES.value if 0 == i else UserAction.ANSWER_NO.value}]
+            for i in option_indexes
+        ]
+        buttons.append([{"text": "🔄 I don't know", "callback_data": UserAction.ANSWER_NO.value}])
         
         return TrainingRequest(
             method=self.type,
             word=word,
-            message=f"Choose the correct translation for:\n\n{word.text}",
-            buttons=[
-                {"text": opt, "callback_data": f"{self.callback_prefix}answer_{word.id}_{i}"}
-                for i, opt in enumerate(options, 1)
-            ],
-            additional_data={"options": options}
+            message=f"Choose the correct translation for:\n\n*{word.text}*",
+            buttons=buttons,
         )
+
+
+class MultipleChoiceTargetMethod(BaseTrainingMethod):
+    """Method with multiple choice options."""
+    priority: int = 2
+    type: TrainingMethod = TrainingMethod.MULTIPLE_CHOICE_TARGET
+
+    @classmethod
+    def should_be_used_for_word(cls, word: Word) -> bool:
+        """This method can be used for any word."""
+        return True
     
-    def _parse_response(self, raw_response: RawResponse) -> UserResponse:
-        if not raw_response.text:
-            return False
-        correct_answer = raw_response.request.word.translation
-        return UserResponse(UserAction.ANSWER, raw_response.request.word.id, raw_response.text == correct_answer)
+    def _create_request(self, word: Word) -> TrainingRequest:
+        # Create multiple choice options
+        options = [word.text]  # Correct answer
+        # Add 3 random wrong options
+        wrong_options = self.learning_service.get_random_word_texts(3, exclude=[word.text])
+        options.extend(wrong_options)
+        # Create a list of indexes and shuffle it
+        option_indexes = list(range(len(options)))
+        random.shuffle(option_indexes)
+
+        buttons = [
+            [{"text": options[i], "callback_data": UserAction.ANSWER_YES.value if 0 == i else UserAction.ANSWER_NO.value}]
+            for i in option_indexes
+        ]
+        buttons.append([{"text": "🔄 I don't know", "callback_data": UserAction.ANSWER_NO.value}])
+        
+        return TrainingRequest(
+            method=self.type,
+            word=word,
+            message=f"Choose the correct variant for:\n\n*{word.translation}*",
+            buttons=buttons,
+        )
 
 
 class SpellingMethod(BaseTrainingMethod):
@@ -208,7 +237,7 @@ class SpellingMethod(BaseTrainingMethod):
         return TrainingRequest(
             method=self.type,
             word=word,
-            message=f"Type the word for this translation:\n\n{word.translation}",
+            message=f"Type the word for this translation:\n\n*{word.translation}*",
             buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
             expects_text=True
         )
@@ -234,7 +263,7 @@ class TranslationMethod(BaseTrainingMethod):
         return TrainingRequest(
             method=self.type,
             word=word,
-            message=f"Translate this sentence:\n\n{example.sentence}",
+            message=f"Translate this sentence:\n\n*{example.sentence}*\n\nTranslation: _{example.translation}_",
             buttons=[{"text": "🔙 Back", "callback_data": f"{self.callback_prefix}back"}],
             expects_text=True,
             additional_data={"example": example}
