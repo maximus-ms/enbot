@@ -150,6 +150,23 @@ async def log_received(update: Update, context_type: str) -> None:
     logger.info(f"Received @{context_type:8} from user {update.effective_user.username} ({update.effective_user.id}){txt}")
 
 
+async def send_popup_message(update: Update, text: str) -> None:
+    """
+    Show a popup message to the user.
+    This creates an alert-style popup that shows on top of the chat.
+    
+    Args:
+        update: The update object from Telegram
+        text: The text to display in the popup
+    """
+    if update.callback_query:
+        await update.callback_query.answer(text=text, show_alert=True)
+    else:
+        # If not called from a callback query, we need to handle this differently
+        # Maybe send as a regular message instead
+        await update.message.reply_text(f"⚠️ {text}")
+
+
 async def handle_start(update: Update, context: CallbackContext) -> int:
     """Start the conversation and show main menu."""
     user = update.effective_user

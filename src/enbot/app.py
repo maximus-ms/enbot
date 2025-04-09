@@ -10,7 +10,7 @@ from telegram.warnings import PTBUserWarning
 # Suppress the warning about CallbackQueryHandler and per_message
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
-from telegram import Bot
+from telegram import Bot, MenuButtonCommands
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -66,6 +66,10 @@ class EnBot:
             # Set up error notifications
             from enbot.bot import setup_admin_notifications
             setup_admin_notifications(self.application, settings.logging.admin_notification_level)
+
+            # Set up menu button
+            await self.application.bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+            self.logger.info("Menu button configured")
 
             # Create conversation handler for both messages and callbacks
             conv_handler = ConversationHandler(
