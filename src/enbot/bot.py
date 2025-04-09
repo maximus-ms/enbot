@@ -342,15 +342,20 @@ async def handle_learning_response(update: Update, context: CallbackContext) -> 
             await send_training_request(update, next_request)
             return LEARNING
         else:
-            # Learning cycle completed
-            await update.callback_query.edit_message_text(
-                "Great job! You've completed this learning cycle.\n"
-                "Would you like to start a new one?",
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
-                     InlineKeyboardButton("💡 Start New Cycle", callback_data="start_learning")],
-                ]),
-            )
+            try:
+                # Learning cycle completed
+                await update.callback_query.edit_message_text(
+                        "Great job! You've completed this learning cycle.\n"
+                        "Would you like to start a new one?",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu"),
+                            InlineKeyboardButton("💡 Start New Cycle", callback_data="start_learning")],
+                        ]),
+                    )
+            except Exception as e:
+                logger.warning(f"Error sending training request: {e}")
+                await update.callback_query.answer_callback_query()
+                pass
             return MAIN_MENU
 
     finally:
@@ -375,17 +380,25 @@ async def send_training_request(update: Update, request: TrainingRequest) -> Non
 
     # Send message
     if update.callback_query:
-        await update.callback_query.edit_message_text(
-            request.message,
-            reply_markup=reply_markup,
-            parse_mode="HTML"
-        )
+        try:
+            await update.callback_query.edit_message_text(
+                request.message,
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.warning(f"Error sending training request: {e}")
+            await update.callback_query.answer_callback_query()
     else:
-        await update.message.reply_text(
-            request.message,
-            reply_markup=reply_markup,
-            parse_mode="HTML"
-        )
+        try:
+            await update.message.reply_text(
+                request.message,
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.warning(f"Error sending training request: {e}")
+            pass
 
 
 def parse_user_response(update: Update, request: TrainingRequest) -> Optional[RawResponse]:
@@ -687,8 +700,10 @@ async def handle_admin_menu_admin_add_delete(update: Update, context: CallbackCo
     if update.message:
         try:
             db = SessionLocal()
+
             add_admin = context.user_data['admin_menu_admin_add_delete_add_admin']
             del context.user_data['admin_menu_admin_add_delete_add_admin']
+
             telegram_id = int(update.message.text)
 
             if not user:
@@ -714,7 +729,7 @@ async def handle_admin_menu_admin_add_delete(update: Update, context: CallbackCo
             await update.message.reply_text("Admin updated successfully", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
         except Exception as e:
             logger.error(f"Error getting telegram id from message: {e}")
-            await update.message.reply_text("Invalid telegram id", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+            await update.message.reply_text("Error handling admin menu admin add/delete", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
             return MAIN_MENU
         finally:
             db.close()
@@ -724,22 +739,26 @@ async def handle_admin_menu_admin_add_delete(update: Update, context: CallbackCo
         if not user: 
             await query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
             return MAIN_MENU
+        try:
+            if update.callback_query.data == "admin_menu_admin_delete":
+                add_admin = False
+                logger.warning(f"Deleting admin: {user.telegram_id}")
+            elif update.callback_query.data == "admin_menu_admin_add":
+                add_admin = True
+                logger.warning(f"Adding admin: {user.telegram_id}")
 
-        if update.callback_query.data == "admin_menu_admin_delete":
-            add_admin = False
-            logger.warning(f"Deleting admin: {user.telegram_id}")
-        elif update.callback_query.data == "admin_menu_admin_add":
-            add_admin = True
-            logger.warning(f"Adding admin: {user.telegram_id}")
-
-        context.user_data['admin_menu_admin_add_delete_add_admin'] = add_admin
-        await query.edit_message_text(
-            f"Enter telegram id of user to {'add' if add_admin else 'delete'}",
-            reply_markup=InlineKeyboardMarkup([
-                KB_BTNS_BACK_TO_MENU_SETTINGS
-            ]),
-        )
-        return ADMIN_MENU_ADMIN_ADD_DELETE
+            context.user_data['admin_menu_admin_add_delete_add_admin'] = add_admin
+            await query.edit_message_text(
+                f"Enter telegram id of user to {'add' if add_admin else 'delete'}",
+                reply_markup=InlineKeyboardMarkup([
+                    KB_BTNS_BACK_TO_MENU_SETTINGS
+                ]),
+            )
+            return ADMIN_MENU_ADMIN_ADD_DELETE
+        except Exception as e:
+            logger.error(f"Error getting telegram id from message: {e}")
+            await query.edit_message_text("Error handling admin menu admin add/delete", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+            return MAIN_MENU
     else:
         await query.edit_message_text("Operation cancelled", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
         return MAIN_MENU
