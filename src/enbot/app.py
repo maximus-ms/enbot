@@ -29,9 +29,11 @@ from enbot.bot import (
     handle_message,
     handle_add_words,
     handle_learning_response,
+    handle_admin_menu_admin_add_delete,
     MAIN_MENU,
     ADDING_WORDS,
     LEARNING,
+    ADMIN_MENU_ADMIN_ADD_DELETE,
 )
 
 
@@ -80,6 +82,10 @@ class EnBot:
                     LEARNING: [
                         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_learning_response),
                         CallbackQueryHandler(handle_learning_response),
+                    ],
+                    ADMIN_MENU_ADMIN_ADD_DELETE: [
+                        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_admin_menu_admin_add_delete),
+                        CallbackQueryHandler(handle_admin_menu_admin_add_delete),
                     ],
                 },
                 fallbacks=[CommandHandler("start", handle_start)],

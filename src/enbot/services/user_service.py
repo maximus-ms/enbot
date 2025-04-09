@@ -123,6 +123,7 @@ class UserService:
         notification_hour: Optional[int] = None,
         notifications_enabled: Optional[bool] = None,
         word_add_last_date: Optional[datetime] = None,
+        is_admin: Optional[bool] = None,
     ) -> User:
         """Update user settings."""
         user = self.db.query(User).filter(User.id == user_id).first()
@@ -150,6 +151,9 @@ class UserService:
         if notifications_enabled is not None:
             user.notifications_enabled = notifications_enabled
             log_message += f" notifications_enabled: {notifications_enabled}"
+        if is_admin is not None:
+            user.is_admin = is_admin
+            log_message += f" is_admin: {is_admin}"
         if word_add_last_date is not None:
             user.word_add_last_date = word_add_last_date
             log_message += f" word_add_last_date: {word_add_last_date}"
@@ -397,4 +401,8 @@ class UserService:
             category=category,
         )
         self.db.add(log)
-        self.db.commit() 
+        self.db.commit()
+
+    def get_users(self) -> List[User]:
+        """Get all users from the database."""
+        return self.db.query(User).all()

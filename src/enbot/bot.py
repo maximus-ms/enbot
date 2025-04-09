@@ -58,7 +58,7 @@ class AdminNotificationHandler(logging.Handler):
             # Get all admin users
             db = SessionLocal()
             try:
-                admin_users = db.query(User).filter(User.telegram_id.in_(settings.bot.admin_ids)).all()
+                admin_users = db.query(User).filter(User.is_admin).all()
                 for admin in admin_users:
                     asyncio.create_task(
                         bot_application.bot.send_message(
@@ -110,7 +110,7 @@ def disable_admin_notifications() -> None:
     bot_application = None
 
 # Conversation states
-MAIN_MENU, ADDING_WORDS, LEARNING = range(3)
+MAIN_MENU, ADDING_WORDS, LEARNING, ADMIN_MENU_ADMIN_ADD_DELETE = range(4)
 
 # Button texts
 MENU = "🏠 Menu"
@@ -125,10 +125,10 @@ ADMIN_MENU = "🛠️ Admin Menu"
 
 def msg_back_to(text: str) -> str: return f"🔙 {text}"
 
-ERR_MSG_NOT_REGISTERED = "Please /start first to register."
+ERR_MSG_NOT_REGISTERED = "Please /start first to register"
 ERR_KB_NOT_REGISTERED = [[InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
 
-ERR_MSG_NOT_ADMIN = "You don't have admin privileges."
+ERR_MSG_NOT_ADMIN = "You don't have admin privileges"
 ERR_KB_NOT_ADMIN = [[InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")]]
 
 # Settings options
@@ -198,18 +198,22 @@ async def handle_callback(update: Update, context: CallbackContext) -> int:
         return await start_learning(update, context)
     elif query.data.startswith("learning_response_"):
         return await handle_learning_response(update, context)
+    elif query.data == "back_to_menu":
+        return await handle_start(update, context)
     elif query.data.startswith("add_words"):
         return await add_words(update, context)
     elif query.data == "statistics":
         return await show_statistics(update, context)
     elif query.data == "settings":
         return await show_settings(update, context)
+    elif query.data.startswith("admin_menu_admin_"):
+        return await handle_admin_menu_admin_add_delete(update, context)
     elif query.data == "admin_menu":
         return await show_admin_menu(update, context)
     elif query.data.startswith("admin_menu_"):
         return await handle_admin_menu(update, context)
-    elif query.data == "back_to_menu":
-        return await handle_start(update, context)
+    elif query.data.startswith("review_dictionary"):
+        return await handle_review_dictionary(update, context)
     elif query.data == "daily_goals":
         return await handle_daily_goals(update, context)
     elif query.data == "daily_goals_words":
@@ -607,7 +611,6 @@ async def show_admin_menu(update: Update, context: CallbackContext) -> int:
         await query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
         return MAIN_MENU
     
-    # if user.telegram_id not in settings.bot.admin_ids:
     if not user.is_admin:
         await query.edit_message_text(ERR_MSG_NOT_ADMIN, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_ADMIN))
         return MAIN_MENU
@@ -616,9 +619,12 @@ async def show_admin_menu(update: Update, context: CallbackContext) -> int:
         [InlineKeyboardButton("⚠️ Set notifications warnings", callback_data="admin_menu_notifications_warnings")],
         [InlineKeyboardButton("🚨 Set notifications errors", callback_data="admin_menu_notifications_errors")],
         [InlineKeyboardButton("🔕 Disable notifications", callback_data="admin_menu_notifications_disable")],
+        [InlineKeyboardButton("🔔 Send test notification info", callback_data="admin_menu_notifications_test_info")],
         [InlineKeyboardButton("🔔 Send test notification warning", callback_data="admin_menu_notifications_test_warning")],
         [InlineKeyboardButton("🚨 Send test notification error", callback_data="admin_menu_notifications_test_error")],
-        [InlineKeyboardButton(msg_back_to(MENU), callback_data="back_to_menu")],
+        [InlineKeyboardButton("🎭 Show list of users", callback_data="admin_menu_show_users_list")],
+        [InlineKeyboardButton("🔍 Review dictionary", callback_data="review_dictionary")],
+        KB_BTNS_BACK_TO_MENU_SETTINGS
     ]
 
     await query.edit_message_text(
@@ -631,7 +637,7 @@ async def show_admin_menu(update: Update, context: CallbackContext) -> int:
     return MAIN_MENU
 
 
-async def handle_admin_menu(update: Update, context: CallbackContext) -> None:
+async def handle_admin_menu(update: Update, context: CallbackContext) -> int:
     """Handle admin menu."""
     query = update.callback_query
     user = get_user_from_update(update)
@@ -649,10 +655,164 @@ async def handle_admin_menu(update: Update, context: CallbackContext) -> None:
         config_admin_notifications(logging.ERROR)
     elif update.callback_query.data == "admin_menu_notifications_disable":
         disable_admin_notifications()
+    elif update.callback_query.data == "admin_menu_notifications_test_info":
+        logger.info("Test info notification")
     elif update.callback_query.data == "admin_menu_notifications_test_warning":
         logger.warning("Test warning notification")
     elif update.callback_query.data == "admin_menu_notifications_test_error":
         logger.error("Test error notification")
+    elif update.callback_query.data == "admin_menu_show_users_list":
+        db = SessionLocal()
+        try:
+            user_service = UserService(db)
+            users = user_service.get_users()
+            message = "🎭 List of users:\n\n"
+            for user in users:
+                message += f"{user.telegram_id} {user.username}{' (admin)' if user.is_admin else ''}\n"
+            await update.callback_query.edit_message_text(message, reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🗑️ Delete admin", callback_data="admin_menu_admin_delete"),
+                 InlineKeyboardButton("🔑 Add admin", callback_data="admin_menu_admin_add")],
+                KB_BTNS_BACK_TO_MENU_SETTINGS
+            ]))
+        finally:
+            db.close()
+
+    return MAIN_MENU
+
+
+async def handle_admin_menu_admin_add_delete(update: Update, context: CallbackContext) -> int:
+    """Handle admin menu admin add/delete."""
+    user = get_user_from_update(update)
+        # check if user send a message
+    if update.message:
+        try:
+            db = SessionLocal()
+            add_admin = context.user_data['admin_menu_admin_add_delete_add_admin']
+            del context.user_data['admin_menu_admin_add_delete_add_admin']
+            telegram_id = int(update.message.text)
+
+            if not user:
+                logger.debug(f"handle_admin_menu_admin_add_delete: User not found: {update.message.text}")
+                await update.message.reply_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
+                return MAIN_MENU
+            
+            if (user.telegram_id not in settings.bot.admin_ids) and (user.telegram_id != telegram_id):
+                await update.message.reply_text("You can't add/delete other admins", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+                return MAIN_MENU
+            
+
+            if not add_admin and telegram_id == user.telegram_id and user.telegram_id in settings.bot.admin_ids:
+                await update.message.reply_text("You can't delete yourself", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+                return MAIN_MENU
+
+            user_service = UserService(db)
+            user = user_service.get_user_by_telegram_id(telegram_id)
+            if not user:
+                await update.message.reply_text("User not found", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+                return MAIN_MENU
+            user_service.update_user_settings(user.id, is_admin=add_admin)
+            await update.message.reply_text("Admin updated successfully", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+        except Exception as e:
+            logger.error(f"Error getting telegram id from message: {e}")
+            await update.message.reply_text("Invalid telegram id", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+            return MAIN_MENU
+        finally:
+            db.close()
+        return MAIN_MENU
+    elif update.callback_query:
+        query = update.callback_query
+        if not user: 
+            await query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=InlineKeyboardMarkup(ERR_KB_NOT_REGISTERED))
+            return MAIN_MENU
+
+        if update.callback_query.data == "admin_menu_admin_delete":
+            add_admin = False
+            logger.warning(f"Deleting admin: {user.telegram_id}")
+        elif update.callback_query.data == "admin_menu_admin_add":
+            add_admin = True
+            logger.warning(f"Adding admin: {user.telegram_id}")
+
+        context.user_data['admin_menu_admin_add_delete_add_admin'] = add_admin
+        await query.edit_message_text(
+            f"Enter telegram id of user to {'add' if add_admin else 'delete'}",
+            reply_markup=InlineKeyboardMarkup([
+                KB_BTNS_BACK_TO_MENU_SETTINGS
+            ]),
+        )
+        return ADMIN_MENU_ADMIN_ADD_DELETE
+    else:
+        await query.edit_message_text("Operation cancelled", reply_markup=InlineKeyboardMarkup([KB_BTNS_BACK_TO_MENU_SETTINGS]))
+        return MAIN_MENU
+
+
+async def handle_review_dictionary(update: Update, context: CallbackContext) -> int:
+    """Handle review dictionary."""
+    user = get_user_from_update(update)
+    if not user: 
+        await update.callback_query.edit_message_text(ERR_MSG_NOT_REGISTERED, reply_markup=ERR_KB_NOT_REGISTERED)
+        return MAIN_MENU
+    
+    word_id = 0
+
+    # Get context if there any word index in context
+    if "review_dictionary_word_id" in context.user_data:
+        try:
+            word_id = context.user_data["review_dictionary_word_id"]
+        except Exception as e:
+            logger.error(f"Error getting word id from context: {e}")
+            pass
+    
+    logger.debug(f"Reviewing word: {word_id}")
+
+    try:
+        db = SessionLocal()
+        learning_service = LearningService(db)
+
+        get_previous = False
+        if update.callback_query.data == "review_dictionary_previous_word":
+            get_previous = True
+        elif update.callback_query.data == "review_dictionary_delete_word":
+            logger.info(f"Deleting word {word_id}")
+            learning_service.delete_word(word_id)
+
+        word = learning_service.get_next_word_by_id(word_id, inverse=get_previous)
+        if not word:
+            logger.debug(f"No more words to review. Getting previous word: {word_id}")
+            word_id -= (int(get_previous) * 2 - 1)
+            if word_id < 0: word_id = 0
+            logger.debug(f"No more words to review. Getting previous word2: {word_id}")
+            context.user_data['review_dictionary_word_id'] = word_id
+            buttons = []
+
+            if word_id != 0:
+                buttons.append([InlineKeyboardButton("⬅️ Previous word", callback_data="review_dictionary_previous_word")])
+            else:
+                buttons.append([InlineKeyboardButton("➡️ Next word", callback_data="review_dictionary_next_word")])
+            buttons.append(KB_BTNS_BACK_TO_MENU_SETTINGS)
+            
+            await update.callback_query.edit_message_text(
+                "No more words to review.",
+                reply_markup=InlineKeyboardMarkup(buttons),
+            )
+            return MAIN_MENU        
+
+        word_id = word.id
+        context.user_data['review_dictionary_word_id'] = word_id
+        logger.debug(f"Reviewing next word: {word_id}")
+        await update.callback_query.edit_message_text(
+            f"🔍 Review Dictionary\n\n"
+            f"Word: <b>{word.text}</b>\n"
+            f"Translation: <i>{word.translation}</i>",
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ Previous word", callback_data="review_dictionary_previous_word"),
+                 InlineKeyboardButton("🗑️ Delete word",   callback_data="review_dictionary_delete_word"),
+                 InlineKeyboardButton("➡️ Next word",     callback_data="review_dictionary_next_word")],
+                KB_BTNS_BACK_TO_MENU_SETTINGS
+            ]),
+        )
+    finally:
+        db.close()
 
     return MAIN_MENU
 

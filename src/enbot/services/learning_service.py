@@ -355,6 +355,13 @@ class LearningService:
         """Get a word by its ID."""
         return self.db.query(Word).filter(Word.id == word_id).first()
 
+    def get_next_word_by_id(self, word_id: int, inverse: bool = False) -> Optional[Word]:
+        """Get a word by its ID or the next word if the word is not found."""
+        if inverse:
+            return self.db.query(Word).filter(Word.id < word_id).order_by(Word.id.desc()).first()
+        else:
+            return self.db.query(Word).filter(Word.id > word_id).order_by(Word.id).first()
+
     def get_users_with_active_cycles(self) -> List[int]:
         """Get a list of user IDs that have active learning cycles."""
         # Query users who have active cycles
@@ -468,4 +475,15 @@ class LearningService:
         self.db.query(CycleWord).filter(CycleWord.user_word_id == user_word.id).delete()
         self.db.query(UserCycle).filter(UserCycle.user_id == user_id, UserCycle.word_id == word_id).delete()
         self.db.delete(user_word)
+        self.db.commit()
+
+    def delete_word(self, word_id: int) -> None:
+        """Delete words from the database."""
+        user_words = self.db.query(UserWord).filter(UserWord.word_id == word_id).all()
+        for user_word in user_words:
+            self.log_user_activity(user_word.user_id, f"Admin deleted word {word_id}", "info", "word")
+            self.db.query(CycleWord).filter(CycleWord.user_word_id == user_word.id).delete()
+            self.db.query(UserCycle).filter(UserCycle.word_id == user_word.word_id).delete()
+            self.db.delete(user_word)
+        self.db.query(Word).filter(Word.id == word_id).delete()
         self.db.commit()
