@@ -69,7 +69,7 @@ class BaseTrainingMethod(ABC):
             if isinstance(button, list):
                 self._add_callback_prefix_to_list_of_buttons(button)
             else:
-                button["callback_data"] = f"{self.callback_prefix}{button["callback_data"]}"
+                button["callback_data"] = f"{self.callback_prefix}{button['callback_data']}"
         return buttons
     
     @final

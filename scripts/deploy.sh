@@ -11,9 +11,9 @@ NC='\033[0m' # No Color
 
 echo -e "${YELLOW}Starting EnBot deployment...${NC}"
 
-# Check if Python 3.8+ is installed
+# Check if Python 3.12+ is installed
 if ! command -v python3 &> /dev/null; then
-    echo -e "${RED}Python 3 is not installed. Please install Python 3.8 or higher.${NC}"
+    echo -e "${RED}Python 3 is not installed. Please install Python 3.12 or higher.${NC}"
     exit 1
 fi
 
