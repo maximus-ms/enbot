@@ -11,7 +11,7 @@ from typing import Optional
 logger = None
 
 # Configure logging
-def setup_logging(level: Optional[int] = None) -> None:
+def setup_logging(first_message: str = "", level: Optional[int] = None) -> None:
     """Configure logging for the entire application.
     
     Args:
@@ -44,6 +44,8 @@ def setup_logging(level: Optional[int] = None) -> None:
     console_handler.setFormatter(formatter)
     root_logger.addHandler(console_handler)
 
+    root_logger.info(f"================================================")
+    root_logger.info(f"{first_message}")
     root_logger.info(f"Logging configured with level: {logging.getLevelName(level)}")
 
     # Add file handler with rotation
@@ -146,9 +148,10 @@ async def main() -> None:
 
 if __name__ == "__main__":
     # Ensure all required directories exist
+
     ensure_directories()
 
-    setup_logging()
+    setup_logging("Starting EnBot.v0.0.7 ...")
 
     try:
         # Create and set event loop

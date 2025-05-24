@@ -22,6 +22,15 @@ from telegram.ext import (
     ContextTypes,
     ConversationHandler,
 )
+from telegram.error import (
+    TelegramError,
+    Forbidden,
+    BadRequest,
+    TimedOut,
+    NetworkError,
+    ChatMigrated,
+    RetryAfter,
+)
 
 from enbot.config import settings
 from enbot.models.base import SessionLocal
@@ -47,6 +56,9 @@ class AdminNotificationHandler(logging.Handler):
     def __init__(self, level=logging.ERROR):
         super().__init__(level)
         self.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        self.blocked_users = set()  # Track users who have blocked the bot
+        self.failed_users = {}  # Track temporary failures with retry count
+        self.max_retries = 3
     
     def emit(self, record):
         """Send the log record to admin users."""
@@ -60,24 +72,97 @@ class AdminNotificationHandler(logging.Handler):
             try:
                 admin_users = db.query(User).filter(User.is_admin).all()
                 for admin in admin_users:
+                    # Skip users who have blocked the bot
+                    if admin.telegram_id in self.blocked_users:
+                        continue
+                    
+                    # Skip users who have failed too many times recently
+                    if self.failed_users.get(admin.telegram_id, 0) >= self.max_retries:
+                        continue
+                    
                     try:
-                        asyncio.create_task(
-                            bot_application.bot.send_message(
-                                chat_id=admin.telegram_id,
-                                text=f"⚠️ {record.levelname} Alert:\n\n{message}",
-                                parse_mode="HTML"
-                            )
+                        # Create task but don't await it to avoid blocking the logging
+                        task = asyncio.create_task(
+                            self._send_admin_message(admin.telegram_id, record.levelname, message)
+                        )
+                        # Add done callback to handle the result
+                        task.add_done_callback(
+                            lambda t, user_id=admin.telegram_id: self._handle_send_result(t, user_id)
                         )
                     except Exception as e:
-                        print(f"Error sending message to admin {admin.telegram_id}: {e}")
-                        pass
+                        # Log to stderr to avoid recursion in logging
+                        print(f"Error creating task for admin {admin.telegram_id}: {e}", file=__import__('sys').stderr)
             finally:
                 db.close()
         except KeyboardInterrupt:
             return
         except Exception as e:
-            # If something goes wrong in the handler, log it to prevent recursion
-            print(f"Error in AdminNotificationHandler: {e}")
+            # If something goes wrong in the handler, log it to stderr to prevent recursion
+            print(f"Error in AdminNotificationHandler: {e}", file=__import__('sys').stderr)
+    
+    async def _send_admin_message(self, chat_id: int, level: str, message: str):
+        """Send message to admin user with proper error handling."""
+        try:
+            await bot_application.bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ {level} Alert:\n\n{message}",
+                parse_mode="HTML"
+            )
+            # Reset failure count on success
+            if chat_id in self.failed_users:
+                del self.failed_users[chat_id]
+                
+        except Forbidden:
+            # User blocked the bot or chat doesn't exist
+            self.blocked_users.add(chat_id)
+            print(f"Admin user {chat_id} has blocked the bot or chat is inaccessible", file=__import__('sys').stderr)
+            
+        except BadRequest as e:
+            # Invalid chat_id or message format issues
+            print(f"Bad request for admin {chat_id}: {e}", file=__import__('sys').stderr)
+            self.blocked_users.add(chat_id)  # Treat as permanently failed
+            
+        except (TimedOut, NetworkError) as e:
+            # Temporary network issues - can retry
+            self.failed_users[chat_id] = self.failed_users.get(chat_id, 0) + 1
+            print(f"Network error sending to admin {chat_id} (attempt {self.failed_users[chat_id]}): {e}", file=__import__('sys').stderr)
+            
+        except RetryAfter as e:
+            # Rate limiting - can retry later
+            self.failed_users[chat_id] = self.failed_users.get(chat_id, 0) + 1
+            print(f"Rate limited sending to admin {chat_id} (retry after {e.retry_after}s): {e}", file=__import__('sys').stderr)
+            
+        except ChatMigrated as e:
+            # Chat was migrated to supergroup
+            print(f"Chat {chat_id} migrated to {e.new_chat_id}", file=__import__('sys').stderr)
+            # TODO: Update the admin's chat_id in database if needed
+            
+        except TelegramError as e:
+            # Other Telegram API errors
+            print(f"Telegram error sending to admin {chat_id}: {e}", file=__import__('sys').stderr)
+            self.failed_users[chat_id] = self.failed_users.get(chat_id, 0) + 1
+            
+        except Exception as e:
+            # Unexpected errors
+            print(f"Unexpected error sending to admin {chat_id}: {e}", file=__import__('sys').stderr)
+            self.failed_users[chat_id] = self.failed_users.get(chat_id, 0) + 1
+    
+    def _handle_send_result(self, task: asyncio.Task, user_id: int):
+        """Handle the result of the send message task."""
+        try:
+            task.result()  # This will raise any exception that occurred
+        except Exception as e:
+            # Task failed - the error was already logged in _send_admin_message
+            pass
+    
+    def reset_blocked_user(self, user_id: int):
+        """Reset a user's blocked status (useful for admin commands)."""
+        self.blocked_users.discard(user_id)
+        self.failed_users.pop(user_id, None)
+    
+    def get_blocked_users(self) -> set:
+        """Get list of blocked users for admin monitoring."""
+        return self.blocked_users.copy()
 
 # Store the bot application globally so it can be accessed by the logging handler
 bot_application: Optional[Application] = None
