@@ -60,13 +60,17 @@ class AdminNotificationHandler(logging.Handler):
             try:
                 admin_users = db.query(User).filter(User.is_admin).all()
                 for admin in admin_users:
-                    asyncio.create_task(
-                        bot_application.bot.send_message(
-                            chat_id=admin.telegram_id,
-                            text=f"⚠️ {record.levelname} Alert:\n\n{message}",
-                            parse_mode="HTML"
+                    try:
+                        asyncio.create_task(
+                            bot_application.bot.send_message(
+                                chat_id=admin.telegram_id,
+                                text=f"⚠️ {record.levelname} Alert:\n\n{message}",
+                                parse_mode="HTML"
+                            )
                         )
-                    )
+                    except Exception as e:
+                        print(f"Error sending message to admin {admin.telegram_id}: {e}")
+                        pass
             finally:
                 db.close()
         except KeyboardInterrupt:
