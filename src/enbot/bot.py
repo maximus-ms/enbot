@@ -70,7 +70,10 @@ class AdminNotificationHandler(logging.Handler):
             # Get all admin users
             db = SessionLocal()
             try:
-                admin_users = db.query(User).filter(User.is_admin).all()
+                admin_users = db.query(User).filter(
+                    User.is_admin == True,
+                    User.notifications_enabled == True
+                ).all()
                 for admin in admin_users:
                     # Skip users who have blocked the bot
                     if admin.telegram_id in self.blocked_users:
@@ -115,12 +118,16 @@ class AdminNotificationHandler(logging.Handler):
         except Forbidden:
             # User blocked the bot or chat doesn't exist
             self.blocked_users.add(chat_id)
+            self._disable_admin_notifications_in_db(chat_id)
             print(f"Admin user {chat_id} has blocked the bot or chat is inaccessible", file=__import__('sys').stderr)
             
         except BadRequest as e:
             # Invalid chat_id or message format issues
             print(f"Bad request for admin {chat_id}: {e}", file=__import__('sys').stderr)
-            self.blocked_users.add(chat_id)  # Treat as permanently failed
+            # Only disable for specific BadRequest errors that indicate permanent failure
+            if self._is_user_blocked_error(e):
+                self.blocked_users.add(chat_id)
+                self._disable_admin_notifications_in_db(chat_id)
             
         except (TimedOut, NetworkError) as e:
             # Temporary network issues - can retry
@@ -163,6 +170,41 @@ class AdminNotificationHandler(logging.Handler):
     def get_blocked_users(self) -> set:
         """Get list of blocked users for admin monitoring."""
         return self.blocked_users.copy()
+    
+    def _disable_admin_notifications_in_db(self, telegram_id: int) -> None:
+        """Disable notifications for admin user in database."""
+        try:
+            from enbot.services.user_service import UserService
+            db = SessionLocal()
+            try:
+                user_service = UserService(db)
+                user = user_service.get_user_by_telegram_id(telegram_id)
+                if user and user.is_admin:
+                    user_service.update_user_settings(
+                        user.id,
+                        notifications_enabled=False
+                    )
+                    print(f"Disabled notifications in database for admin user {telegram_id}", file=__import__('sys').stderr)
+            finally:
+                db.close()
+        except Exception as e:
+            print(f"Error updating admin notifications in database for user {telegram_id}: {e}", file=__import__('sys').stderr)
+    
+    def _is_user_blocked_error(self, error: Exception) -> bool:
+        """Check if the error indicates user blocked the bot."""
+        error_str = str(error).lower()
+        
+        # Check for various Telegram error patterns indicating blocked user
+        blocked_patterns = [
+            "bot was blocked by the user",
+            "forbidden: bot was blocked",
+            "forbidden: user is deactivated", 
+            "forbidden: bot can't send messages to bots",
+            "chat not found",
+            "user not found",
+        ]
+        
+        return any(pattern in error_str for pattern in blocked_patterns)
 
 # Store the bot application globally so it can be accessed by the logging handler
 bot_application: Optional[Application] = None

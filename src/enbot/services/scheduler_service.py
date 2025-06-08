@@ -6,6 +6,7 @@ from typing import Optional, Callable, Dict, Any
 
 from sqlalchemy.orm import Session
 from telegram import Bot
+from telegram.error import Forbidden, BadRequest, TelegramError
 
 from enbot.models.base import SessionLocal
 from enbot.models.models import User
@@ -102,9 +103,34 @@ class SchedulerService:
                             user.telegram_id,
                         )
 
-                    except Exception as e:
+                    except (Forbidden, BadRequest) as e:
+                        # Handle Telegram-specific errors that indicate blocked users
                         logger.error(
                             "Failed to send daily notification to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                        if self._is_user_blocked_error(e):
+                            user.notifications_enabled = False
+                            self.db.commit()
+                            logger.info(
+                                "Disabled notifications for user %s (ID: %d) - bot was blocked",
+                                user.username,
+                                user.telegram_id,
+                            )
+                    except TelegramError as e:
+                        # Handle other Telegram errors (network issues, etc.)
+                        logger.error(
+                            "Telegram error sending daily notification to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                    except Exception as e:
+                        # Handle unexpected errors
+                        logger.error(
+                            "Unexpected error sending daily notification to user %s (ID: %d): %s",
                             user.username,
                             user.telegram_id,
                             str(e),
@@ -124,11 +150,7 @@ class SchedulerService:
         while self.running:
             try:
                 # Get all users with notifications enabled
-                users = (
-                    self.db.query(User)
-                    .filter(User.notifications_enabled == True)
-                    .all()
-                )
+                users = self.notification_service.get_all_users_for_notification()
 
                 # Check each user
                 for user in users:
@@ -159,9 +181,34 @@ class SchedulerService:
                             user.telegram_id,
                         )
 
-                    except Exception as e:
+                    except (Forbidden, BadRequest) as e:
+                        # Handle Telegram-specific errors that indicate blocked users
                         logger.error(
                             "Failed to send review reminder to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                        if self._is_user_blocked_error(e):
+                            user.notifications_enabled = False
+                            self.db.commit()
+                            logger.info(
+                                "Disabled notifications for user %s (ID: %d) - bot was blocked",
+                                user.username,
+                                user.telegram_id,
+                            )
+                    except TelegramError as e:
+                        # Handle other Telegram errors (network issues, etc.)
+                        logger.error(
+                            "Telegram error sending review reminder to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                    except Exception as e:
+                        # Handle unexpected errors
+                        logger.error(
+                            "Unexpected error sending review reminder to user %s (ID: %d): %s",
                             user.username,
                             user.telegram_id,
                             str(e),
@@ -181,7 +228,7 @@ class SchedulerService:
         while self.running:
             try:
                 # Get all users
-                users = self.db.query(User).all()
+                users = self.notification_service.get_all_users_for_notification()
 
                 # Check each user
                 for user in users:
@@ -205,9 +252,34 @@ class SchedulerService:
                             user.telegram_id,
                         )
 
-                    except Exception as e:
+                    except (Forbidden, BadRequest) as e:
+                        # Handle Telegram-specific errors that indicate blocked users
                         logger.error(
                             "Failed to send achievement message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                        if self._is_user_blocked_error(e):
+                            user.notifications_enabled = False
+                            self.db.commit()
+                            logger.info(
+                                "Disabled notifications for user %s (ID: %d) - bot was blocked",
+                                user.username,
+                                user.telegram_id,
+                            )
+                    except TelegramError as e:
+                        # Handle other Telegram errors (network issues, etc.)
+                        logger.error(
+                            "Telegram error sending achievement message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                    except Exception as e:
+                        # Handle unexpected errors
+                        logger.error(
+                            "Unexpected error sending achievement message to user %s (ID: %d): %s",
                             user.username,
                             user.telegram_id,
                             str(e),
@@ -227,7 +299,7 @@ class SchedulerService:
         while self.running:
             try:
                 # Get all users
-                users = self.db.query(User).all()
+                users = self.notification_service.get_all_users_for_notification()
 
                 # Check each user
                 for user in users:
@@ -251,9 +323,34 @@ class SchedulerService:
                             user.telegram_id,
                         )
 
-                    except Exception as e:
+                    except (Forbidden, BadRequest) as e:
+                        # Handle Telegram-specific errors that indicate blocked users
                         logger.error(
                             "Failed to send streak message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                        if self._is_user_blocked_error(e):
+                            user.notifications_enabled = False
+                            self.db.commit()
+                            logger.info(
+                                "Disabled notifications for user %s (ID: %d) - bot was blocked",
+                                user.username,
+                                user.telegram_id,
+                            )
+                    except TelegramError as e:
+                        # Handle other Telegram errors (network issues, etc.)
+                        logger.error(
+                            "Telegram error sending streak message to user %s (ID: %d): %s",
+                            user.username,
+                            user.telegram_id,
+                            str(e),
+                        )
+                    except Exception as e:
+                        # Handle unexpected errors
+                        logger.error(
+                            "Unexpected error sending streak message to user %s (ID: %d): %s",
                             user.username,
                             user.telegram_id,
                             str(e),
@@ -303,4 +400,20 @@ class SchedulerService:
 
         self.tasks[name].cancel()
         del self.tasks[name]
-        logger.info("Cancelled task: %s", name) 
+        logger.info("Cancelled task: %s", name)
+
+    def _is_user_blocked_error(self, error: Exception) -> bool:
+        """Check if the error indicates user blocked the bot."""
+        error_str = str(error).lower()
+        
+        # Check for various Telegram error patterns indicating blocked user
+        blocked_patterns = [
+            "bot was blocked by the user",
+            "forbidden: bot was blocked",
+            "forbidden: user is deactivated",
+            "forbidden: bot can't send messages to bots",
+            "chat not found",
+            "user not found",
+        ]
+        
+        return any(pattern in error_str for pattern in blocked_patterns)

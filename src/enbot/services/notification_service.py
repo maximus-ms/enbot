@@ -33,6 +33,19 @@ class NotificationService:
             .all()
         )
 
+    def get_all_users_for_notification(self) -> List[User]:
+        """Get all users who should receive notifications"""
+        
+        return (
+            self.db.query(User)
+            .filter(
+                and_(
+                    User.notifications_enabled == True,
+                )
+            )
+            .all()
+        )
+
     def get_daily_reminder_message(self, user: User) -> str:
         """Generate a daily reminder message for a user."""
         # Get user's statistics
