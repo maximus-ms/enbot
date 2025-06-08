@@ -187,4 +187,4 @@ class Settings:
 
 # Create global settings instance
 settings = Settings()
-settings.validate() 
+settings.validate()
