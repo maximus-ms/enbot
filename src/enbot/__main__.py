@@ -151,7 +151,7 @@ if __name__ == "__main__":
 
     ensure_directories()
 
-    setup_logging("Starting EnBot.v0.0.7 ...")
+    setup_logging("Starting EnBot.v0.0.8 ...")
 
     try:
         # Create and set event loop
